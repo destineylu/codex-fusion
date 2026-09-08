@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "clipproxyapi",
+      "displayName": "ClipProxy API",
+      "kind": "openai-compatible",
+      "ownedBy": "clipproxyapi",
+      "baseUrl": "https://openclipapi.ban-butterfly.top/v1",
+      "baseUrlEnv": "CLIPPROXYAPI_BASE_URL",
+      "credential": {
+        "environment": [
+          "CLIPPROXYAPI_API_KEY"
+        ],
+        "file": "clipproxyapi-api-key.secret",
+        "legacyFiles": [],
+        "keychainServices": [
+          "codex-router-clipproxyapi"
+        ],
+        "prompt": "ClipProxy API key"
+      }
+    }
+  ]
+}
