@@ -8,7 +8,8 @@ import {
   providerPayloadLimit,
 } from "../src/provider-payload-limits.mjs";
 
-const XKIRO = { id: "xkiro" };
+const XKIRO = { id: "xkiro", ownedBy: "xkiro" };
+const XKIRO2 = { id: "xkiro2", ownedBy: "xkiro" };
 const OPUS5 = {
   provider: "xkiro",
   upstreamModel: "anthropic/claude-opus-5",
@@ -42,7 +43,21 @@ test("Xkiro Opus 5 keeps its measured payload and compact safety limits exact-ro
     undefined,
   );
   assert.equal(
-    providerPayloadLimit(OPUS5, { id: "commandcode" }),
+    providerPayloadLimit(
+      { provider: "xkiro2", upstreamModel: "anthropic/claude-opus-5" },
+      XKIRO2,
+    )?.maxBytes,
+    1_150_000,
+  );
+  assert.equal(
+    providerAutoCompactLimit(
+      { provider: "xkiro2", upstreamModel: "anthropic/claude-opus-5" },
+      XKIRO2,
+    ),
+    200_000,
+  );
+  assert.equal(
+    providerPayloadLimit(OPUS5, { id: "commandcode", ownedBy: "commandcode" }),
     undefined,
   );
 });

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "slug": "xkiro2/moonshotai/kimi-k3",
+      "gatewayModel": "xkiro2-moonshotai-kimi-k3",
+      "upstreamModel": "moonshotai/kimi-k3",
+      "provider": "xkiro2",
+      "listed": false,
+      "displayName": "Kimi K3 (Xkiro #2)",
+      "description": "Kimi K3 through the second Xkiro API account.",
+      "priority": 155,
+      "defaultEffort": "high",
+      "reasoningLevels": [
+        { "effort": "high", "description": "Deep reasoning" }
+      ],
+      "contextWindow": 1000000,
+      "autoCompact": 850000,
+      "inputModalities": ["text", "image"],
+      "compHash": "xkiro2-moonshotai-kimi-k3-v1"
+    }
+  ]
+}

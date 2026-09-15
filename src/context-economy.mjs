@@ -2,12 +2,13 @@ import { contextEconomyEnabled } from "./context-economy-state.mjs";
 
 const K = 1_000;
 
-// Exact-route working budgets. These do not change the model's advertised
-// contextWindow; they only tell Codex when to checkpoint a long coding thread.
-// Keeping the list exact avoids changing cheap/native models just because they
-// share a provider family.
+// Working budgets do not change the model's advertised contextWindow; they
+// only tell Codex when to checkpoint a long coding thread. Most entries remain
+// exact-route scoped. Xkiro Opus 5 is the narrow exception: multiple Xkiro
+// accounts share the same measured provider behavior, while their credentials
+// and usage attribution remain independent.
+const XKIRO_OPUS_POLICY = Object.freeze({ autoCompact: 160 * K });
 const POLICIES = new Map([
-  ["xkiro/anthropic/claude-opus-5", { autoCompact: 160 * K }],
   ["commandcode-messages/claude-opus-5", { autoCompact: 160 * K }],
   ["commandcode-messages/claude-opus-4.8", { autoCompact: 160 * K }],
   ["commandcode/deepseek-v4-flash", { autoCompact: 160 * K }],
@@ -20,9 +21,15 @@ export const CONTEXT_ECONOMY_SOFT_LIMIT = 100 * K;
 export const CONTEXT_ECONOMY_AGING_MIN_BYTES = 16 * 1024;
 export const CONTEXT_ECONOMY_AGING_FRONTIER = 2;
 
-export function contextEconomyPolicy(model, { enabled = contextEconomyEnabled() } = {}) {
+export function contextEconomyPolicy(
+  model,
+  { enabled = contextEconomyEnabled(), provider } = {},
+) {
   if (!enabled || !model || typeof model.slug !== "string") return undefined;
-  const base = POLICIES.get(model.slug);
+  const xkiroOpus =
+    provider?.ownedBy === "xkiro" &&
+    model.upstreamModel === "anthropic/claude-opus-5";
+  const base = xkiroOpus ? XKIRO_OPUS_POLICY : POLICIES.get(model.slug);
   if (!base) return undefined;
   const current = Number(model.autoCompact);
   const autoCompact =
@@ -46,5 +53,8 @@ export function contextEconomyAutoCompactLimit(model, options) {
 }
 
 export function contextEconomyPolicies() {
-  return [...POLICIES.entries()].map(([slug, policy]) => ({ slug, ...policy }));
+  return [
+    { slug: "xkiro-family/anthropic/claude-opus-5", ...XKIRO_OPUS_POLICY },
+    ...[...POLICIES.entries()].map(([slug, policy]) => ({ slug, ...policy })),
+  ];
 }

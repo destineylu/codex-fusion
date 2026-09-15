@@ -16,6 +16,8 @@ import {
   openRouterKeyMetrics,
   providerAccountUsageSnapshot,
   veniceBalanceMetrics,
+  xkiroHistorySnapshot,
+  xkiroUsageMetrics,
 } from "../src/provider-account-usage.mjs";
 
 test("Venice reports every pool that can fund a request", () => {
@@ -317,6 +319,80 @@ test("normalizes a custom Chutes subscription without inventing a monthly cap", 
 
 test("does not invent Chutes subscription quotas for an unsubscribed account", () => {
   assert.deepEqual(chutesSubscriptionMetrics({ subscription: false }), []);
+});
+
+test("normalizes Xkiro quota, free-token, wallet, and history payloads", () => {
+  const now = Date.parse("2026-09-14T16:00:00Z");
+  const metrics = xkiroUsageMetrics({
+    windows: [
+      { kind: "short", window_sec: 18_000, spent_usd: "14.5", cap_usd: "200", remaining_usd: "185.5", resets_in_sec: 3600 },
+      { kind: "long", window_sec: 604_800, spent_usd: "61.9", cap_usd: "1320", remaining_usd: "1258.1", resets_in_sec: 86_400 },
+    ],
+    free_tokens: { used_today: 26_676, limit_per_day: 300_000_000, remaining: 299_973_324 },
+    wallet: { balance_usd: "4.25", held_usd: "0.50" },
+  }, { now });
+  assert.equal(metrics.find((metric) => metric.label === "5-hour limit")?.remaining, 185.5);
+  assert.equal(metrics.find((metric) => metric.label === "7-day limit")?.limit, 1320);
+  assert.equal(metrics.find((metric) => metric.label === "Daily free tokens")?.remaining, 299_973_324);
+  assert.equal(metrics.find((metric) => metric.label === "Wallet balance")?.value, 4.25);
+  assert.equal(metrics.find((metric) => metric.label === "5-hour limit")?.resetAt, (now + 3_600_000) / 1_000);
+
+  assert.deepEqual(xkiroHistorySnapshot({
+    period: "month",
+    bucket: "day",
+    points: [{ ts: "2026-09-14T00:00:00.000Z", requests: 12, tokens: 3456, spend_usd: "1.25" }],
+    total: { requests: 12, tokens: 3456, spend_usd: "1.25" },
+  }), {
+    period: "month",
+    bucket: "day",
+    points: [{ ts: "2026-09-14T00:00:00.000Z", requests: 12, tokens: 3456, spendUsd: 1.25 }],
+    total: { requests: 12, tokens: 3456, spendUsd: 1.25 },
+  });
+});
+
+test("Xkiro accounts use their own key and official usage endpoints", async () => {
+  const saved = process.env.XKIRO2_API_KEY;
+  process.env.XKIRO2_API_KEY = "TEST_XKIRO2_USAGE_KEY";
+  const calls = [];
+  try {
+    const snapshot = await providerAccountUsageSnapshot({
+      providerIds: ["xkiro2"],
+      fetchImpl: async (url, options) => {
+        calls.push(url);
+        assert.equal(options.headers.Authorization, "Bearer TEST_XKIRO2_USAGE_KEY");
+        if (url.endsWith("/v1/usage")) {
+          return new Response(JSON.stringify({
+            plan: "ultra",
+            windows: [
+              { kind: "short", window_sec: 18_000, spent_usd: "10", cap_usd: "200", remaining_usd: "190", resets_in_sec: 1200 },
+              { kind: "long", window_sec: 604_800, spent_usd: "60", cap_usd: "1320", remaining_usd: "1260", resets_in_sec: 7200 },
+            ],
+            free_tokens: { used_today: 1000, limit_per_day: 300_000_000, remaining: 299_999_000 },
+            wallet: { balance_usd: "0", held_usd: "0" },
+          }));
+        }
+        assert.equal(url, "https://api.xkiro.com/v1/usage/history?period=month");
+        return new Response(JSON.stringify({
+          period: "month",
+          bucket: "day",
+          points: [{ ts: "2026-09-14T00:00:00.000Z", requests: 4, tokens: 5000, spend_usd: "1.5" }],
+          total: { requests: 4, tokens: 5000, spend_usd: "1.5" },
+        }));
+      },
+    });
+    assert.deepEqual(calls.sort(), [
+      "https://api.xkiro.com/v1/usage",
+      "https://api.xkiro.com/v1/usage/history?period=month",
+    ].sort());
+    assert.equal(snapshot.xkiro2.status, "available");
+    assert.equal(snapshot.xkiro2.plan, "ultra");
+    assert.equal(snapshot.xkiro2.xkiroHistory.total.spendUsd, 1.5);
+    assert.equal(snapshot.xkiro.status, "disabled");
+    assert.doesNotMatch(JSON.stringify(snapshot), /TEST_XKIRO2_USAGE_KEY/);
+  } finally {
+    if (saved === undefined) delete process.env.XKIRO2_API_KEY;
+    else process.env.XKIRO2_API_KEY = saved;
+  }
 });
 
 test("normalizes Kimi weekly and five-hour quota windows", () => {

@@ -183,6 +183,13 @@ test("provider registry exposes configured API and OAuth model families", () => 
       "venice/glm-5.3",
       "xiaomi-mimo/mimo-v2.5-pro",
       "xiaomi-mimo/mimo-v2.5",
+      "xkiro2/anthropic/claude-fable-5-1",
+      "xkiro2/anthropic/claude-opus-5",
+      "xkiro2/z-ai/glm-5.3-flash",
+      "xkiro2/z-ai/glm-5.3",
+      "xkiro2/openai/gpt-5.6-sol",
+      "xkiro2/openai/gpt-6-astra",
+      "xkiro2/x-ai/grok-4.6",
       "zai-api/glm-4.7",
       "zai-api/glm-5.2",
       "zai-api/glm-5.3-flash",
@@ -644,6 +651,23 @@ test("provider registry exposes configured API and OAuth model families", () => 
     MODEL_BY_SLUG.get("deepseek/deepseek-v4-flash-vision-exp").inputModalities,
     ["text", "image"],
   );
+});
+
+test("Xkiro #2 daily coding models keep 1M capability with a 260K working compact budget", () => {
+  for (const slug of [
+    "xkiro2/openai/gpt-6-astra",
+    "xkiro2/openai/gpt-5.6-sol",
+    "xkiro2/anthropic/claude-fable-5-1",
+    "xkiro2/z-ai/glm-5.3",
+  ]) {
+    const model = MODEL_BY_SLUG.get(slug);
+    assert.equal(model.contextWindow, 1_000_000, slug);
+    assert.equal(model.autoCompact, 260_000, slug);
+  }
+
+  const kimi = MODEL_BY_SLUG.get("xkiro2/moonshotai/kimi-k3");
+  assert.equal(kimi.listed, false);
+  assert.equal(LISTED_MODELS.some((model) => model.slug === kimi.slug), false);
 });
 
 test("only checked-in Gemini reseller models opt into trailing model-turn trimming", () => {

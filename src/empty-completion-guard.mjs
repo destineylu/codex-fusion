@@ -26,7 +26,7 @@ export function emptyCompletionPreludeMsForRoute(
     Number.isFinite(slowRouteMs) && slowRouteMs >= 0
       ? slowRouteMs
       : SLOW_FIRST_TOKEN_PRECONTENT_MS;
-  const routeKey = `${String(provider?.id || "")}\0${String(route?.upstreamModel || "")}`;
+  const routeKey = `${String(provider?.ownedBy || provider?.id || "")}\0${String(route?.upstreamModel || "")}`;
   return SLOW_FIRST_TOKEN_ROUTES.has(routeKey) ? Math.max(baseline, slowLimit) : baseline;
 }
 

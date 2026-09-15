@@ -27,7 +27,7 @@ import {
 import { codexAuthStatus, codexVersion, runCodex } from "./codex-binary.mjs";
 import { readUserModels } from "./user-models.mjs";
 import { syncRoutedCodexAgents } from "./codex-agent-catalog.mjs";
-import { MODEL_BY_SLUG, MODEL_SLUG_ALIASES } from "./model-registry.mjs";
+import { MODEL_BY_SLUG, MODEL_SLUG_ALIASES, PROVIDERS } from "./model-registry.mjs";
 import {
   applyMultiAgentCapabilities,
   applyMultiAgentParentCapabilities,
@@ -547,7 +547,9 @@ function normalizeNativeModel(model) {
 }
 
 export function routedModel(template, model, behaviorTemplate = template) {
-  const contextEconomy = contextEconomyPolicy(model);
+  const contextEconomy = contextEconomyPolicy(model, {
+    provider: PROVIDERS.get(model.provider),
+  });
   const behaviorModelMessages =
     behaviorTemplate?.model_messages &&
     typeof behaviorTemplate.model_messages === "object" &&

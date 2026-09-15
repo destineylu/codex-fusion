@@ -691,6 +691,7 @@ const QWEN_PLAN_DASHBOARD_URL =
   "https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan";
 const OLLAMA_DASHBOARD_URL = "https://ollama.com/settings";
 const COMMANDCODE_DASHBOARD_URL = "https://commandcode.ai/studio";
+const XKIRO_DASHBOARD_URL = "https://xkiro.com";
 const OPENROUTER_DASHBOARD_URL = "https://openrouter.ai/settings/credits";
 const VENICE_DASHBOARD_URL = "https://venice.ai/settings/api";
 // Nous publishes no credits or usage route on the inference API (a 404 on both
@@ -779,6 +780,140 @@ async function zaiCodingAccount(fetchImpl) {
     account.plan = payload.data.planName;
   }
   return account;
+}
+
+export function xkiroUsageMetrics(payload, { now = Date.now() } = {}) {
+  const metrics = [];
+  for (const window of payload?.windows || []) {
+    const seconds = numberValue(window?.window_sec);
+    const used = numberValue(window?.spent_usd);
+    const limit = numberValue(window?.cap_usd);
+    const remaining = numberValue(window?.remaining_usd);
+    if (!Number.isFinite(seconds) || !Number.isFinite(used) || !Number.isFinite(limit) || limit <= 0) {
+      continue;
+    }
+    const label = seconds === 5 * 60 * 60
+      ? "5-hour limit"
+      : seconds === 7 * 24 * 60 * 60
+        ? "7-day limit"
+        : `${Math.round(seconds / 3600)}-hour limit`;
+    const usedPercent = Math.max(0, Math.min(100, (used / limit) * 100));
+    const resetIn = numberValue(window?.resets_in_sec);
+    metrics.push({
+      kind: "quota",
+      label,
+      usedPercent,
+      remainingPercent: 100 - usedPercent,
+      used,
+      limit,
+      remaining: Number.isFinite(remaining) ? remaining : Math.max(0, limit - used),
+      unit: "USD",
+      ...(Number.isFinite(resetIn) && resetIn >= 0 ? { resetAt: (now + resetIn * 1_000) / 1_000 } : {}),
+    });
+  }
+
+  const free = payload?.free_tokens;
+  const freeLimit = numberValue(free?.limit_per_day);
+  const freeUsed = numberValue(free?.used_today);
+  const freeRemaining = numberValue(free?.remaining);
+  if (Number.isFinite(freeLimit) && freeLimit > 0 && Number.isFinite(freeUsed)) {
+    const usedPercent = Math.max(0, Math.min(100, (freeUsed / freeLimit) * 100));
+    metrics.push({
+      kind: "quota",
+      label: "Daily free tokens",
+      usedPercent,
+      remainingPercent: 100 - usedPercent,
+      used: freeUsed,
+      limit: freeLimit,
+      remaining: Number.isFinite(freeRemaining) ? freeRemaining : Math.max(0, freeLimit - freeUsed),
+      unit: "tokens",
+    });
+  }
+
+  const wallet = payload?.wallet;
+  const balance = numberValue(wallet?.balance_usd);
+  const held = numberValue(wallet?.held_usd);
+  if (Number.isFinite(balance)) {
+    metrics.push({
+      kind: "balance",
+      label: "Wallet balance",
+      value: balance,
+      currency: "USD",
+      detail: Number.isFinite(held) && held > 0 ? `Held $${held.toFixed(2)}` : "Available wallet balance",
+      available: true,
+    });
+  }
+  return metrics;
+}
+
+export function xkiroHistorySnapshot(payload) {
+  if (!payload || typeof payload !== "object") return undefined;
+  const points = Array.isArray(payload.points)
+    ? payload.points
+        .map((point) => {
+          const ts = typeof point?.ts === "string" && Number.isFinite(Date.parse(point.ts))
+            ? new Date(point.ts).toISOString()
+            : undefined;
+          if (!ts) return undefined;
+          return {
+            ts,
+            requests: Math.max(0, Math.round(numberValue(point.requests) || 0)),
+            tokens: Math.max(0, Math.round(numberValue(point.tokens) || 0)),
+            spendUsd: Math.max(0, numberValue(point.spend_usd) || 0),
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const total = payload.total && typeof payload.total === "object"
+    ? {
+        requests: Math.max(0, Math.round(numberValue(payload.total.requests) || 0)),
+        tokens: Math.max(0, Math.round(numberValue(payload.total.tokens) || 0)),
+        spendUsd: Math.max(0, numberValue(payload.total.spend_usd) || 0),
+      }
+    : undefined;
+  if (!points.length && !total) return undefined;
+  return {
+    period: typeof payload.period === "string" ? payload.period.slice(0, 24) : "month",
+    bucket: typeof payload.bucket === "string" ? payload.bucket.slice(0, 24) : "day",
+    points,
+    total,
+  };
+}
+
+async function xkiroAccount(fetchImpl, providerId) {
+  const provider = PROVIDERS.get(providerId);
+  const credential = resolveProviderCredential(provider);
+  if (!credential) return { status: "not-configured", source: "official-api", metrics: [] };
+  const baseURL = (process.env[provider.baseUrlEnv] || provider.baseUrl).replace(/\/+$/, "");
+  const origin = new URL(baseURL).origin;
+  const fallback = (message) => ({
+    ...withHeaderQuota(providerId, localOnly(message)),
+    dashboardUrl: XKIRO_DASHBOARD_URL,
+  });
+  if (origin !== "https://api.xkiro.com") {
+    return fallback("Xkiro account usage is unavailable for a custom endpoint");
+  }
+  try {
+    const [usage, history] = await Promise.all([
+      requestJson(`${origin}/v1/usage`, credential.value, {}, fetchImpl),
+      requestJson(`${origin}/v1/usage/history?period=month`, credential.value, {}, fetchImpl),
+    ]);
+    const metrics = xkiroUsageMetrics(usage);
+    const xkiroHistory = xkiroHistorySnapshot(history);
+    if (!metrics.length && !xkiroHistory) {
+      return fallback("Xkiro reported no account usage; showing router traffic");
+    }
+    return {
+      status: "available",
+      source: "official-api",
+      metrics,
+      dashboardUrl: XKIRO_DASHBOARD_URL,
+      ...(typeof usage?.plan === "string" && usage.plan ? { plan: usage.plan } : {}),
+      ...(xkiroHistory ? { xkiroHistory } : {}),
+    };
+  } catch {
+    return fallback("Xkiro account usage is unavailable; showing router traffic");
+  }
 }
 
 // The credits route is not in the public docs, so any failure degrades to the
@@ -983,6 +1118,9 @@ async function accountUsageFor(providerId, fetchImpl) {
         : { status: "not-configured", source: "official-api", metrics: [] };
     }
     if (providerId === "commandcode") return await commandCodeAccount(fetchImpl);
+    if (providerId === "xkiro" || providerId === "xkiro2") {
+      return await xkiroAccount(fetchImpl, providerId);
+    }
     if (providerId === "venice") return await veniceAccount(fetchImpl);
     if (providerId === "openrouter") return await openRouterAccount(fetchImpl);
     if (providerId === "nousresearch") {

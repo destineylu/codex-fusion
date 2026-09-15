@@ -3115,7 +3115,7 @@ async function prepareRoutedRequest({
   normalizedInput,
   agingEnabled,
 }) {
-  const contextEconomy = contextEconomyPolicy(route);
+  const contextEconomy = contextEconomyPolicy(route, { provider: providerForModel(route) });
   const routeAgingEnabled = agingEnabled || Boolean(contextEconomy);
   const tokenMaxxing = routeAgingEnabled && tokenMaxxingActive({
     enabled: true,

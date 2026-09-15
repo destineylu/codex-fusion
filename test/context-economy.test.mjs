@@ -38,13 +38,37 @@ test("Context Economy keeps the real context window while lowering only the work
   assert.equal(model.autoCompact, 900_000);
 });
 
-test("Context Economy is exact-route scoped and never raises an already safer compact limit", () => {
+test("Context Economy is exact-route scoped, shares Xkiro Opus policy across accounts, and never raises a safer limit", () => {
   assert.equal(
     contextEconomyPolicy(
       { slug: "commandcode/deepseek-v4-flash", autoCompact: 120_000 },
       { enabled: true },
     ).autoCompact,
     120_000,
+  );
+  assert.equal(
+    contextEconomyPolicy(
+      {
+        slug: "xkiro2/anthropic/claude-opus-5",
+        provider: "xkiro2",
+        upstreamModel: "anthropic/claude-opus-5",
+        autoCompact: 850_000,
+      },
+      { enabled: true, provider: { id: "xkiro2", ownedBy: "xkiro" } },
+    ).autoCompact,
+    160_000,
+  );
+  assert.equal(
+    contextEconomyPolicy(
+      {
+        slug: "xkiro2/anthropic/claude-fable-5-1",
+        provider: "xkiro2",
+        upstreamModel: "anthropic/claude-fable-5-1",
+        autoCompact: 850_000,
+      },
+      { enabled: true, provider: { id: "xkiro2", ownedBy: "xkiro" } },
+    ),
+    undefined,
   );
   assert.equal(
     contextEconomyPolicy(

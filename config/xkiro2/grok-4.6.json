@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "slug": "xkiro2/x-ai/grok-4.6",
+      "gatewayModel": "xkiro2-x-ai-grok-4-6",
+      "upstreamModel": "x-ai/grok-4.6",
+      "provider": "xkiro2",
+      "listed": true,
+      "displayName": "Grok 4.6 (Xkiro #2)",
+      "description": "Grok 4.6 through the second Xkiro API account.",
+      "priority": 156,
+      "defaultEffort": "high",
+      "reasoningLevels": [
+        { "effort": "high", "description": "Deep reasoning" }
+      ],
+      "contextWindow": 500000,
+      "autoCompact": 425000,
+      "inputModalities": ["text", "image"],
+      "compHash": "xkiro2-x-ai-grok-4-6-v1"
+    }
+  ]
+}

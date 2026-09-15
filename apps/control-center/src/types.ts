@@ -465,6 +465,82 @@ export interface ProviderUsage {
     message?: string;
     dashboardUrl?: string;
     plan?: string;
+    xkiroHistory?: {
+      period: string;
+      bucket: string;
+      points: Array<{
+        ts: string;
+        requests: number;
+        tokens: number;
+        spendUsd: number;
+      }>;
+      total?: {
+        requests: number;
+        tokens: number;
+        spendUsd: number;
+      };
+    };
+  };
+}
+
+export interface XkiroModelSpend {
+  slug: string;
+  displayName: string;
+  accessTier?: string;
+  usageValueUsd: number;
+  requests: number;
+  pricedRequests: number;
+  incompleteRequests: number;
+  retrospectiveRequests: number;
+  unpricedRequests: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  cacheHitPercent: number | null;
+}
+
+export interface XkiroSpendWindow {
+  key: string;
+  label: string;
+  from: string | null;
+  to: string;
+  usageValueUsd: number;
+  requests: number;
+  pricedRequests: number;
+  incompleteRequests: number;
+  retrospectiveRequests: number;
+  unpricedRequests: number;
+  models: XkiroModelSpend[];
+}
+
+export interface XkiroRecentSpendRequest {
+  at: string;
+  slug: string;
+  displayName: string;
+  status: number;
+  durationMs: number;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  estimatedInputTokens?: number;
+  usageValueUsd?: number;
+  complete: boolean;
+  retrospective: boolean;
+}
+
+export interface XkiroSpendSnapshot {
+  providerId: "xkiro" | "xkiro2";
+  pricingVersion: string;
+  pricingSource: string;
+  observedFrom: string | null;
+  capturedFrom: string | null;
+  plan?: string;
+  recentRequests: XkiroRecentSpendRequest[];
+  windows: {
+    fiveHour: XkiroSpendWindow;
+    weekly: XkiroSpendWindow;
+    thirtyDay: XkiroSpendWindow;
+    all: XkiroSpendWindow;
   };
 }
 
@@ -544,6 +620,7 @@ export interface ProviderUsageSnapshot {
     providers: ProviderUsage[];
   };
   commandCodeSpend?: CommandCodeSpendSnapshot;
+  xkiroSpend?: Partial<Record<"xkiro" | "xkiro2", XkiroSpendSnapshot>>;
   contextEfficiency?: {
     last24hCachedInputTokens?: number;
     dailyCachedInputTokens?: Array<{

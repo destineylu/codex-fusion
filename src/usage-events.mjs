@@ -15,6 +15,10 @@ import {
   commandCodeBillingSnapshot,
   sanitizeCommandCodeBilling,
 } from "./commandcode-billing.mjs";
+import {
+  sanitizeXkiroBilling,
+  xkiroBillingSnapshot,
+} from "./xkiro-billing.mjs";
 
 export const USAGE_EVENTS_PATH = path.join(STATE_DIR, "usage-events.jsonl");
 
@@ -250,6 +254,13 @@ export function recordUsageEvent({
       at: Date.parse(event.at),
     });
     if (billing) event.commandCodeBilling = billing;
+  }
+  if (event.provider === "xkiro" || event.provider === "xkiro2") {
+    const billing = xkiroBillingSnapshot({
+      ...event,
+      at: Date.parse(event.at),
+    });
+    if (billing) event.xkiroBilling = billing;
   }
   try {
     mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
@@ -515,6 +526,9 @@ export function recentUsageEvents({ sinceMs = 24 * 60 * 60 * 1000, limit = 1_000
           ...(toolResultShapeBytesSaved ? { toolResultShapeBytesSaved } : {}),
           ...(sanitizeCommandCodeBilling(event.commandCodeBilling)
             ? { commandCodeBilling: sanitizeCommandCodeBilling(event.commandCodeBilling) }
+            : {}),
+          ...(sanitizeXkiroBilling(event.xkiroBilling)
+            ? { xkiroBilling: sanitizeXkiroBilling(event.xkiroBilling) }
             : {}),
         };
       });

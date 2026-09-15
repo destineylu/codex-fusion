@@ -75,6 +75,7 @@ const STATUS_LABELS: Record<StatusFilter, string> = {
 };
 
 const ALL_PROVIDERS_LABEL = "All providers";
+const COLLAPSED_PROVIDERS_STORAGE_KEY = "codex-router.models.collapsed-providers.v1";
 
 /** Below this, a list is short enough to read whole; filters and bulk switches
  *  would be more chrome than the list they act on. */
@@ -83,6 +84,16 @@ const CROWDED_LIST = 8;
 /** Picking between two or three providers is slower through a menu than by
  *  reading the provider each row already names. */
 const CROWDED_PROVIDERS = 3;
+
+function storedCollapsedProviderIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COLLAPSED_PROVIDERS_STORAGE_KEY) || "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
 
 interface ModelsPageProps {
   target?: RouterTarget;
@@ -169,6 +180,7 @@ export function ModelsPage({ target, catalog, setup, usage, api, refreshing, dat
   const providerFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const bulkMenuRef = useRef<HTMLDivElement | null>(null);
+  const [collapsedProviderIds, setCollapsedProviderIds] = useState<Set<string>>(storedCollapsedProviderIds);
   // The connect menu lives in the connections strip but is also the first-run
   // call to action, so the page owns whether it is open.
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
@@ -364,6 +376,17 @@ export function ModelsPage({ target, catalog, setup, usage, api, refreshing, dat
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [bulkMenuOpen, filterMenuOpen, providerFilterMenuOpen]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COLLAPSED_PROVIDERS_STORAGE_KEY,
+        JSON.stringify([...collapsedProviderIds].sort()),
+      );
+    } catch {
+      // The page still works when storage is unavailable; only persistence is lost.
+    }
+  }, [collapsedProviderIds]);
 
   const updateCatalogState = (sourceId: string, update: (current: CatalogViewState) => CatalogViewState) => {
     setCatalogStates((current) => ({
@@ -615,6 +638,30 @@ export function ModelsPage({ target, catalog, setup, usage, api, refreshing, dat
       }))
       .filter((group) => group.rows.length > 0);
   }, [providerGroups, visibleRows]);
+  const providerListForcedOpen = Boolean(modelSearch.trim()) || activeProviderFilter !== "all";
+  const visibleProvidersAllCollapsed = !providerListForcedOpen
+    && visibleProviderGroups.length > 0
+    && visibleProviderGroups.every((group) => collapsedProviderIds.has(group.id));
+
+  const setProviderCollapsed = (providerId: string, collapsed: boolean) => {
+    setCollapsedProviderIds((current) => {
+      const next = new Set(current);
+      if (collapsed) next.add(providerId);
+      else next.delete(providerId);
+      return next;
+    });
+  };
+
+  const setVisibleProvidersCollapsed = (collapsed: boolean) => {
+    setCollapsedProviderIds((current) => {
+      const next = new Set(current);
+      for (const group of visibleProviderGroups) {
+        if (collapsed) next.add(group.id);
+        else next.delete(group.id);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!focusRequest) return;
@@ -835,6 +882,22 @@ export function ModelsPage({ target, catalog, setup, usage, api, refreshing, dat
                 ) : null}
               </div>
             ) : null}
+            <button
+              type="button"
+              className="pm-filter-trigger pm-provider-collapse-all"
+              aria-label={visibleProvidersAllCollapsed ? "Expand all providers" : "Collapse all providers"}
+              disabled={!visibleProviderGroups.length || providerListForcedOpen}
+              title={providerListForcedOpen ? "Clear search and provider filters to change provider folding." : undefined}
+              onClick={() => setVisibleProvidersCollapsed(!visibleProvidersAllCollapsed)}
+            >
+              <ChevronDown
+                aria-hidden
+                size={14}
+                strokeWidth={1.7}
+                className={visibleProvidersAllCollapsed ? "is-collapsed" : ""}
+              />
+              <strong>{visibleProvidersAllCollapsed ? "Expand all" : "Collapse all"}</strong>
+            </button>
             <div className="pm-filter-menu-wrap" ref={bulkMenuRef}>
               <button
                 type="button"
@@ -892,18 +955,47 @@ export function ModelsPage({ target, catalog, setup, usage, api, refreshing, dat
               <div className="pm-provider-picker-groups">
                 {visibleProviderGroups.map((group) => {
                   const pickerCount = group.rows.filter((row) => row.on).length;
+                  const collapsed = !providerListForcedOpen && collapsedProviderIds.has(group.id);
                   return (
-                    <section className="pm-picker-provider-group" key={group.id} data-provider={group.id}>
+                    <section
+                      className="pm-picker-provider-group"
+                      key={group.id}
+                      data-provider={group.id}
+                      data-collapsed={collapsed ? "true" : "false"}
+                    >
                       <header className="pm-picker-provider-heading">
-                        <div className="pm-picker-provider-title">
-                          <ProviderLogo providerId={group.id} displayName={group.displayName} size="medium" />
-                          <div>
-                            <strong>{group.displayName}</strong>
-                            <small>{group.rows.length} model{group.rows.length === 1 ? "" : "s"} · {pickerCount} in picker</small>
+                        <button
+                          type="button"
+                          className="pm-picker-provider-toggle"
+                          aria-expanded={!collapsed}
+                          aria-controls={`pm-provider-models-${group.id}`}
+                          aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.displayName} models`}
+                          disabled={providerListForcedOpen}
+                          title={providerListForcedOpen ? "Search and provider filters keep matching providers expanded." : undefined}
+                          onClick={() => setProviderCollapsed(group.id, !collapsed)}
+                        >
+                          <ChevronDown
+                            aria-hidden
+                            size={15}
+                            strokeWidth={1.8}
+                            className={collapsed ? "is-collapsed" : ""}
+                          />
+                          <div className="pm-picker-provider-title">
+                            <ProviderLogo providerId={group.id} displayName={group.displayName} size="medium" />
+                            <div>
+                              <strong>{group.displayName}</strong>
+                              <small>{group.rows.length} model{group.rows.length === 1 ? "" : "s"} · {pickerCount} in picker</small>
+                            </div>
                           </div>
-                        </div>
+                        </button>
                       </header>
-                      <div className="pm-family-list">{group.rows.map(renderRow)}</div>
+                      <div
+                        id={`pm-provider-models-${group.id}`}
+                        className="pm-family-list"
+                        hidden={collapsed}
+                      >
+                        {group.rows.map(renderRow)}
+                      </div>
                     </section>
                   );
                 })}

@@ -408,6 +408,8 @@ curated default display name → Provider display name
 Windows Control Center PID-reuse lifecycle fix
 Xkiro Opus 5 payload-aware context protection
 Context Economy v1（第三方昂贵模型 working-context / lean deferred tools）
+Xkiro #2 独立账号（`docs/LOCAL-PATCH-XKIRO2-ACCOUNT-2026-09-13.md`；必须保留独立凭据与 xKiro family 安全规则）
+Xkiro Usage Accounting（`docs/LOCAL-PATCH-XKIRO-USAGE-ACCOUNTING-2026-09-14.md`；官方账户总额 + request-time 本地模型归因，历史不猜测）
 explicit-consent-only cross-model failover
 Antigravity provider/client-secret related local work
 相关 focused regression tests
@@ -453,6 +455,9 @@ Provider-first Picker
 Provider-scoped Add Models
 Verify & add
 Context Economy v1 开关（必须独立于 Light v2 / Native GPT）
+Xkiro API #2 Provider（独立账号，不覆盖 Xkiro #1）
+Xkiro Usage Accounting（两个账号独立 5h/7d/free/wallet/30d + 本地逐模型快照归因）
+Usage Accounts and allowances Provider 横向标签切换（避免所有账户卡片纵向堆叠）
 curated Provider provenance display
 Windows PID-reuse lifecycle fix
 release-recovery 保护

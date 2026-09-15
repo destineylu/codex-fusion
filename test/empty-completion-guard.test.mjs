@@ -12,7 +12,8 @@ import {
 
 test("only evidence-backed slow-first-token routes get the longer pre-content window", () => {
   const commandCode = { id: "commandcode" };
-  const xkiro = { id: "xkiro" };
+  const xkiro = { id: "xkiro", ownedBy: "xkiro" };
+  const xkiro2 = { id: "xkiro2", ownedBy: "xkiro" };
   const baseline = { defaultMs: 30_000, slowRouteMs: 90_000 };
 
   for (const [provider, upstreamModel] of [
@@ -20,6 +21,8 @@ test("only evidence-backed slow-first-token routes get the longer pre-content wi
     [commandCode, "meta/muse-spark-1.3-contributor"],
     [xkiro, "anthropic/claude-opus-5"],
     [xkiro, "x-ai/grok-4.6"],
+    [xkiro2, "anthropic/claude-opus-5"],
+    [xkiro2, "x-ai/grok-4.6"],
   ]) {
     assert.equal(
       emptyCompletionPreludeMsForRoute({ upstreamModel }, provider, baseline),

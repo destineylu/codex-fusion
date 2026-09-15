@@ -22,7 +22,7 @@ const LIMITS = new Map([
 ]);
 
 export function providerPayloadLimit(model, provider) {
-  const providerId = provider?.id || model?.provider;
+  const providerId = provider?.ownedBy || provider?.id || model?.provider;
   const upstreamModel = model?.upstreamModel;
   if (!providerId || !upstreamModel) return undefined;
   return LIMITS.get(`${providerId}\0${upstreamModel}`);

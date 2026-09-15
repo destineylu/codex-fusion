@@ -347,6 +347,33 @@ const bridgeSource = String.raw`
           goatMultiplier: 3.5,
         }],
       };
+      const xkiroSpendWindow = {
+        key: "weekly",
+        label: "Current 7 days",
+        from: "2026-08-20T08:00:00.000Z",
+        to: "2026-08-27T08:00:00.000Z",
+        usageValueUsd: 1.75,
+        requests: 3,
+        pricedRequests: 3,
+        incompleteRequests: 1,
+        retrospectiveRequests: 0,
+        unpricedRequests: 0,
+        models: [{
+          slug: "xkiro2/anthropic/claude-fable-5-1",
+          displayName: "Claude Fable 5.1",
+          accessTier: "paid",
+          usageValueUsd: 1.75,
+          requests: 3,
+          pricedRequests: 3,
+          incompleteRequests: 1,
+          retrospectiveRequests: 0,
+          unpricedRequests: 0,
+          inputTokens: 600000,
+          cachedInputTokens: 570000,
+          outputTokens: 1500,
+          cacheHitPercent: 95,
+        }],
+      };
       return {
         fetchedAt: "2026-08-27T08:00:00.000Z",
         commandCodeSpend: {
@@ -377,7 +404,91 @@ const bridgeSource = String.raw`
             all: { ...spendWindow, key: "all", label: "All tracked", from: null },
           },
         },
+        xkiroSpend: {
+          xkiro2: {
+            providerId: "xkiro2",
+            pricingVersion: "models-test",
+            pricingSource: "https://api.xkiro.com/v1/models",
+            observedFrom: "2026-08-27T07:00:00.000Z",
+            capturedFrom: "2026-08-27T07:00:00.000Z",
+            plan: "ultra",
+            recentRequests: [{
+              at: "2026-08-27T07:59:45.000Z",
+              slug: "xkiro2/anthropic/claude-fable-5-1",
+              displayName: "Claude Fable 5.1",
+              status: 200,
+              durationMs: 12_500,
+              inputTokens: 204_000,
+              cachedInputTokens: 200_000,
+              outputTokens: 240,
+              usageValueUsd: 0.08,
+              complete: true,
+              retrospective: false,
+            }],
+            windows: {
+              fiveHour: { ...xkiroSpendWindow, key: "fiveHour", label: "Current 5 hours" },
+              weekly: xkiroSpendWindow,
+              thirtyDay: { ...xkiroSpendWindow, key: "thirtyDay", label: "Last 30 days" },
+              all: { ...xkiroSpendWindow, key: "all", label: "All tracked", from: null },
+            },
+          },
+        },
         providers: [{
+          id: "xkiro2",
+          displayName: "Xkiro API #2",
+          credentialType: "api",
+          totalTokens: 612000,
+          requests: 3,
+          last24hTokens: 612000,
+          last24hRequests: 3,
+          dailyUsageBuckets: [{ startDate: "2026-08-27", tokens: 612000, requests: 3 }],
+          account: {
+            status: "available",
+            plan: "ultra",
+            dashboardUrl: "https://xkiro.com",
+            metrics: [
+              {
+                kind: "quota",
+                label: "5-hour limit",
+                used: 14,
+                limit: 200,
+                remaining: 186,
+                usedPercent: 7,
+                remainingPercent: 93,
+                unit: "USD",
+                resetAt: 1800000000,
+              },
+              {
+                kind: "quota",
+                label: "7-day limit",
+                used: 62,
+                limit: 1320,
+                remaining: 1258,
+                usedPercent: 4.7,
+                remainingPercent: 95.3,
+                unit: "USD",
+                resetAt: 1800500000,
+              },
+              {
+                kind: "quota",
+                label: "Daily free tokens",
+                used: 26676,
+                limit: 300000000,
+                remaining: 299973324,
+                usedPercent: 0.01,
+                remainingPercent: 99.99,
+                unit: "tokens",
+              },
+              { kind: "balance", label: "Wallet balance", value: 0, currency: "USD", detail: "Available wallet balance" },
+            ],
+            xkiroHistory: {
+              period: "month",
+              bucket: "day",
+              points: [{ ts: "2026-08-27T00:00:00.000Z", requests: 3, tokens: 612000, spendUsd: 2.04 }],
+              total: { requests: 433, tokens: 98693833, spendUsd: 61.24 },
+            },
+          },
+        }, {
           id: "deepseek",
           displayName: "DeepSeek",
           credentialType: "api",
@@ -562,12 +673,31 @@ test("the production renderer exposes model discovery and picker actions", { tim
       true,
     );
     await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+    const allowancePanel = page.getByLabel("Accounts and allowances");
+    const accountTabs = allowancePanel.getByRole("tablist", { name: "Account provider" });
+    assert.equal(await accountTabs.getByRole("tab").count(), 3);
+    await accountTabs.getByRole("tab", { name: /Xkiro API #2/ }).click();
+    assert.equal(await allowancePanel.locator(".us-metric-card").count(), 4);
+    assert.match(await allowancePanel.innerText(), /Daily free tokens/);
+    assert.doesNotMatch(await allowancePanel.innerText(), /Monthly credits/);
+    await accountTabs.getByRole("tab", { name: /DeepSeek/ }).click();
+    assert.equal(await allowancePanel.locator(".us-metric-card").count(), 2);
+    assert.match(await allowancePanel.innerText(), /Monthly credits/);
+    assert.doesNotMatch(await allowancePanel.innerText(), /Daily free tokens/);
     await page.getByRole("heading", { name: "Command Code model spend", exact: true }).waitFor();
     assert.match(await page.getByLabel("Command Code model spend").innerText(), /Muse Spark 1\.3 Contributor/);
     assert.match(await page.getByLabel("Command Code model spend").innerText(), /GOAT credit eq\./i);
     assert.match(await page.getByLabel("Command Code model spend").innerText(), /Unattributed/i);
     assert.match(await page.getByLabel("Command Code model spend").innerText(), /Recent Command Code requests/);
     assert.match(await page.getByLabel("Command Code model spend").innerText(), /provider omitted · router est\./);
+    await page.getByRole("heading", { name: "Xkiro account usage", exact: true }).waitFor();
+    const xkiroPanel = page.getByLabel("Xkiro account usage");
+    assert.match(await xkiroPanel.innerText(), /ultra/i);
+    assert.match(await xkiroPanel.innerText(), /Claude Fable 5\.1/);
+    assert.match(await xkiroPanel.innerText(), /Official 30-day/i);
+    assert.match(await xkiroPanel.innerText(), /\$61\.24/);
+    assert.match(await xkiroPanel.innerText(), /Recent Xkiro requests/i);
+    assert.match(await xkiroPanel.innerText(), /300m/i);
     assert.equal(
       await page.evaluate(() => window.routerControlTest.navigate({ destination: "usage-resets", sourceId: "deepseek" })),
       true,
@@ -625,6 +755,25 @@ test("the production renderer exposes model discovery and picker actions", { tim
     await openCodeFreeGroup.locator(".pm-family-open").click();
     assert.match(await openCodeFreeGroup.innerText(), /OpenCode Free · Provider API route|OpenCode Free · Free provider route/);
     await modelSearch.fill("");
+
+    // Provider sections fold independently, and the preference is persisted
+    // without mutating picker/provider state.
+    const deepSeekGroup = page.locator('.pm-picker-provider-group[data-provider="deepseek"]');
+    await deepSeekGroup.getByRole("button", { name: "Collapse DeepSeek models" }).click();
+    assert.equal(await deepSeekGroup.locator(".pm-family-list").isHidden(), true);
+    await page.waitForFunction(() =>
+      (localStorage.getItem("codex-router.models.collapsed-providers.v1") || "").includes("deepseek"));
+    assert.deepEqual(
+      await page.evaluate(() => JSON.parse(localStorage.getItem("codex-router.models.collapsed-providers.v1") || "[]")),
+      ["deepseek"],
+    );
+    await page.getByRole("button", { name: "Collapse all providers" }).click();
+    assert.equal(
+      await page.locator('.pm-picker-provider-group[data-collapsed="true"]').count(),
+      await page.locator(".pm-picker-provider-group").count(),
+    );
+    await page.getByRole("button", { name: "Expand all providers" }).click();
+    assert.equal(await page.locator('.pm-picker-provider-group[data-collapsed="true"]').count(), 0);
 
     // Adding is provider-first: opening the dialog must not fan out across every
     // connected account. The operator chooses the provider and explicitly
@@ -705,6 +854,46 @@ test("the production renderer exposes model discovery and picker actions", { tim
       "blocked-preview",
     ]);
     assert.equal(calls.some((call) => call.name === "setPickerModels" && call.args[0] === true), true);
+    assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);
+  } finally {
+    await browser.close();
+    await close();
+  }
+});
+
+test("provider folding persists across renderer reloads", { timeout: 120_000 }, async () => {
+  assert.equal(existsSync(path.join(dist, "index.html")), true, "npm test must build the renderer first");
+  assert.ok(chromiumPath, "No Chromium executable is available for the Control Center renderer test.");
+
+  const { url, close } = await serveRenderer();
+  const browser = await chromium.launch({
+    executablePath: chromiumPath,
+    headless: true,
+    args: process.platform === "linux" ? ["--no-sandbox"] : [],
+  });
+  const pageErrors = [];
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 840 }, locale: "en-US" });
+    page.setDefaultTimeout(10_000);
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") pageErrors.push(message.text());
+    });
+
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Models", exact: true }).click();
+    const deepSeekGroup = page.locator('.pm-picker-provider-group[data-provider="deepseek"]');
+    await deepSeekGroup.waitFor();
+    await deepSeekGroup.getByRole("button", { name: "Collapse DeepSeek models" }).click();
+    await page.waitForFunction(() =>
+      (localStorage.getItem("codex-router.models.collapsed-providers.v1") || "").includes("deepseek"));
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const persistedGroup = page.locator('.pm-picker-provider-group[data-provider="deepseek"]');
+    await persistedGroup.waitFor();
+    assert.equal(await persistedGroup.getAttribute("data-collapsed"), "true");
+    assert.equal(await persistedGroup.locator(".pm-family-list").isHidden(), true);
+    assert.equal(await persistedGroup.getByRole("button", { name: "Expand DeepSeek models" }).count(), 1);
     assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);
   } finally {
     await browser.close();
@@ -965,7 +1154,11 @@ test("usage polling surfaces rejections and ignores older overlapping results", 
     await page.getByText("Account usage poll failed", { exact: true }).waitFor();
     await page.waitForTimeout(450);
     assert.equal(
-      await page.locator('.db-breakdown-list[aria-label="Providers usage breakdown"] .db-breakdown-value').innerText(),
+      await page
+        .locator('.db-breakdown-list[aria-label="Providers usage breakdown"] .db-breakdown-row')
+        .filter({ hasText: "DeepSeek" })
+        .locator(".db-breakdown-value")
+        .innerText(),
       "24k",
     );
     assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);

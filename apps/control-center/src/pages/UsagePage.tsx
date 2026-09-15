@@ -26,6 +26,7 @@ import type {
   UsageBucket,
   UsageEvent,
   UsageMetric,
+  XkiroSpendSnapshot,
 } from "../types";
 import "./usage-status.css";
 
@@ -79,6 +80,12 @@ interface AllowanceRow {
   metric: UsageMetric;
 }
 
+function allowanceProviderLabel(source: UsageSource): string {
+  if (source.id === "chatgpt-subscription") return "ChatGPT";
+  if (source.id === "provider:openai") return "ChatGPT Router";
+  return source.name.replace(/ · measured by this router$/, "");
+}
+
 export function UsagePage({
   target,
   account,
@@ -99,7 +106,10 @@ export function UsagePage({
   focusRequest?: { id: number; sourceId?: string; allowance: boolean };
 }) {
   const [range, setRange] = useState<7 | 30 | 90>(30);
+  const [allowanceSourceId, setAllowanceSourceId] = useState("");
   const [commandCodeRange, setCommandCodeRange] = useState<"fiveHour" | "weekly" | "thirtyDay" | "all">("weekly");
+  const [xkiroRange, setXkiroRange] = useState<"fiveHour" | "weekly" | "thirtyDay" | "all">("weekly");
+  const [xkiroProviderId, setXkiroProviderId] = useState<"xkiro" | "xkiro2">("xkiro2");
   const [selected, setSelected] = useState("");
   const [allowanceFocused, setAllowanceFocused] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -126,6 +136,29 @@ export function UsagePage({
 
   const routerAggregate = sources.find((entry) => entry.id === "all-router");
   const commandCodeProvider = providerUsage?.providers.find((entry) => entry.id === "commandcode");
+  const xkiroEntries = useMemo(() => (["xkiro", "xkiro2"] as const)
+    .map((id) => ({
+      id,
+      provider: providerUsage?.providers.find((entry) => entry.id === id),
+      spend: providerUsage?.xkiroSpend?.[id],
+    }))
+    .filter((entry): entry is {
+      id: "xkiro" | "xkiro2";
+      provider: ProviderUsage | undefined;
+      spend: XkiroSpendSnapshot;
+    } => Boolean(entry.spend && (
+      entry.provider?.account?.status === "available"
+      || entry.spend.windows.all.requests > 0
+    ))), [providerUsage]);
+
+  useEffect(() => {
+    if (!xkiroEntries.length) return;
+    if (!xkiroEntries.some((entry) => entry.id === xkiroProviderId)) {
+      setXkiroProviderId(xkiroEntries[0].id);
+    }
+  }, [xkiroEntries, xkiroProviderId]);
+
+  const activeXkiro = xkiroEntries.find((entry) => entry.id === xkiroProviderId) ?? xkiroEntries[0];
   const latestReportedBucket = source?.kind === "subscription" ? source.buckets.at(-1) : undefined;
   const fetchedAt = source?.kind === "subscription"
     ? account?.fetchedAt
@@ -145,20 +178,39 @@ export function UsagePage({
     ? usageSummary(source, range, rangeTokens, rangeRequests, latestReportedBucket)
     : [];
 
-  const allowances = useMemo<AllowanceRow[]>(() => {
+  const allowanceGroups = useMemo(() => {
     if (!source) return [];
     const candidates = [
       ...sources.filter((entry) => entry.id === source.id && entry.kind !== "aggregate"),
       ...sources.filter((entry) => entry.id !== source.id && entry.kind !== "aggregate"),
     ];
-    return candidates.flatMap((entry) =>
-      entry.metrics.map((metric, index) => ({
-        id: `${entry.id}-${metric.label || metric.kind}-${index}`,
+    return candidates
+      .map((entry) => ({
+        id: entry.id,
         source: entry,
-        metric,
-      })),
-    );
+        rows: entry.metrics.map((metric, index) => ({
+          id: `${entry.id}-${metric.label || metric.kind}-${index}`,
+          source: entry,
+          metric,
+        })),
+      }))
+      .filter((group) => group.rows.length > 0);
   }, [source, sources]);
+
+  const allowances = useMemo<AllowanceRow[]>(
+    () => allowanceGroups.flatMap((group) => group.rows),
+    [allowanceGroups],
+  );
+
+  useEffect(() => {
+    if (!allowanceGroups.length) {
+      if (allowanceSourceId) setAllowanceSourceId("");
+      return;
+    }
+    if (allowanceGroups.some((group) => group.id === allowanceSourceId)) return;
+    const preferred = allowanceGroups.find((group) => group.id === source?.id) ?? allowanceGroups[0];
+    setAllowanceSourceId(preferred.id);
+  }, [allowanceGroups, allowanceSourceId, source?.id]);
 
   const targetAllowanceSourceId = focusRequest?.allowance
     ? navigationSourceId(focusRequest.sourceId)
@@ -172,6 +224,17 @@ export function UsagePage({
       .sort((left, right) => metricResetAt(left.metric)! - metricResetAt(right.metric)!)[0]
     ?? targetAllowanceRows[0]
   )?.id;
+
+  useEffect(() => {
+    if (!focusRequest?.allowance || !targetAllowanceSourceId) return;
+    if (allowanceGroups.some((group) => group.id === targetAllowanceSourceId)) {
+      setAllowanceSourceId(targetAllowanceSourceId);
+    }
+  }, [allowanceGroups, focusRequest?.allowance, targetAllowanceSourceId]);
+
+  const activeAllowanceGroup = allowanceGroups.find((group) => group.id === allowanceSourceId)
+    ?? allowanceGroups[0];
+  const visibleAllowances = activeAllowanceGroup?.rows ?? [];
 
   useEffect(() => {
     if (!focusRequest) return undefined;
@@ -214,7 +277,7 @@ export function UsagePage({
       if (focusAllowance()) handledFocusRequest.current = focusRequest.id;
     }, 80);
     return () => window.clearTimeout(scrollTimer);
-  }, [allowances.length, focusRequest, refreshing, sources, targetAllowanceRowId]);
+  }, [allowanceSourceId, allowances.length, focusRequest, refreshing, sources, targetAllowanceRowId]);
 
   useEffect(() => {
     if (!allowanceFocused) return undefined;
@@ -223,12 +286,9 @@ export function UsagePage({
   }, [allowanceFocused, focusRequest?.id]);
 
   const dashboardSources = useMemo(() => {
-    const candidates = sources.filter((entry) => entry.kind !== "aggregate");
-    return candidates.filter((entry, index, all) =>
-      Boolean(entry.dashboardUrl)
-      && all.findIndex((candidate) => candidate.dashboardUrl === entry.dashboardUrl) === index,
-    );
-  }, [source, sources]);
+    const activeSource = activeAllowanceGroup?.source;
+    return activeSource?.dashboardUrl ? [activeSource] : [];
+  }, [activeAllowanceGroup]);
 
   return (
     <div ref={pageRef} tabIndex={-1} aria-label="Usage overview" className="usage-status-page usage-page">
@@ -327,21 +387,46 @@ export function UsagePage({
                 title="Accounts and allowances"
                 description="Official quota windows and balances for every connected account."
               />
-              {allowances.length ? (
-                <div className="us-metric-stack">
-                  {allowances.map((row) => (
-                    <MetricCard
-                      key={row.id}
-                      source={row.source.name}
-                      metric={row.metric}
-                      cardRef={row.id === targetAllowanceRowId ? allowanceTargetRef : undefined}
-                      navigationFocused={allowanceFocused && row.id === targetAllowanceRowId}
-                    />
-                  ))}
-                  {!dataReady.accountUsage || !dataReady.providerUsage ? (
-                    <SkeletonBlock className="us-loading-metric" />
-                  ) : null}
-                </div>
+              {allowanceGroups.length ? (
+                <>
+                  <div className="us-allowance-tabs" role="tablist" aria-label="Account provider">
+                    {allowanceGroups.map((group) => {
+                      const active = group.id === activeAllowanceGroup?.id;
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          aria-controls={`us-allowance-cards-${group.id}`}
+                          className={active ? "is-active" : ""}
+                          onClick={() => setAllowanceSourceId(group.id)}
+                        >
+                          <span>{allowanceProviderLabel(group.source)}</span>
+                          <small>{group.rows.length}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div
+                    id={`us-allowance-cards-${activeAllowanceGroup?.id || "none"}`}
+                    className="us-metric-stack"
+                    role="tabpanel"
+                  >
+                    {visibleAllowances.map((row) => (
+                      <MetricCard
+                        key={row.id}
+                        source={row.source.name}
+                        metric={row.metric}
+                        cardRef={row.id === targetAllowanceRowId ? allowanceTargetRef : undefined}
+                        navigationFocused={allowanceFocused && row.id === targetAllowanceRowId}
+                      />
+                    ))}
+                    {!dataReady.accountUsage || !dataReady.providerUsage ? (
+                      <SkeletonBlock className="us-loading-metric" />
+                    ) : null}
+                  </div>
+                </>
               ) : !dataReady.accountUsage || !dataReady.providerUsage ? (
                 <PanelSkeleton label="Loading account allowances" count={2} />
               ) : (
@@ -375,6 +460,16 @@ export function UsagePage({
               provider={commandCodeProvider}
               range={commandCodeRange}
               onRangeChange={setCommandCodeRange}
+            />
+          ) : null}
+
+          {activeXkiro ? (
+            <XkiroSpendPanel
+              entries={xkiroEntries}
+              active={activeXkiro}
+              range={xkiroRange}
+              onRangeChange={setXkiroRange}
+              onProviderChange={setXkiroProviderId}
             />
           ) : null}
 
@@ -629,6 +724,235 @@ function CommandCodeSpendPanel({
   );
 }
 
+function XkiroSpendPanel({
+  entries,
+  active,
+  range,
+  onRangeChange,
+  onProviderChange,
+}: {
+  entries: Array<{
+    id: "xkiro" | "xkiro2";
+    provider?: ProviderUsage;
+    spend: XkiroSpendSnapshot;
+  }>;
+  active: {
+    id: "xkiro" | "xkiro2";
+    provider?: ProviderUsage;
+    spend: XkiroSpendSnapshot;
+  };
+  range: "fiveHour" | "weekly" | "thirtyDay" | "all";
+  onRangeChange: (range: "fiveHour" | "weekly" | "thirtyDay" | "all") => void;
+  onProviderChange: (providerId: "xkiro" | "xkiro2") => void;
+}) {
+  const { provider, spend } = active;
+  const window = spend.windows[range];
+  const metrics = provider?.account?.metrics ?? [];
+  const metric = (label: string) => metrics.find((entry) => entry.label === label);
+  const fiveHour = metric("5-hour limit");
+  const weekly = metric("7-day limit");
+  const freeTokens = metric("Daily free tokens");
+  const wallet = metric("Wallet balance");
+  const history = provider?.account?.xkiroHistory;
+  const officialWindowUsed = range === "fiveHour"
+    ? fiveHour?.used
+    : range === "weekly"
+      ? weekly?.used
+      : range === "thirtyDay"
+        ? history?.total?.spendUsd
+        : undefined;
+  const knownMinimum = window.incompleteRequests > 0 || window.unpricedRequests > 0;
+  const coverage = window.requests > 0
+    ? Math.round((window.pricedRequests / window.requests) * 100)
+    : 100;
+  const unattributed = officialWindowUsed == null
+    ? null
+    : Math.max(0, officialWindowUsed - window.usageValueUsd);
+  const tabs = [
+    ["fiveHour", "5 hours"],
+    ["weekly", "7 days"],
+    ["thirtyDay", "30 days"],
+    ["all", "All tracked"],
+  ] as const;
+
+  return (
+    <section className="panel-section us-commandcode-panel us-xkiro-panel" aria-label="Xkiro account usage">
+      <SectionHeading
+        title="Xkiro account usage"
+        description={`${spend.plan || provider?.account?.plan || provider?.displayName || "Xkiro"} account totals are reported by Xkiro; per-model attribution is calculated locally from Router traffic.`}
+        action={(
+          <div className="us-xkiro-controls">
+            {entries.length > 1 ? (
+              <div className="us-spend-range" role="group" aria-label="Xkiro account">
+                {entries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={entry.id === active.id ? "is-active" : ""}
+                    onClick={() => onProviderChange(entry.id)}
+                  >
+                    {entry.provider?.displayName || (entry.id === "xkiro2" ? "Xkiro API #2" : "Xkiro API")}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="us-spend-range" role="group" aria-label="Xkiro spend range">
+              {tabs.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={range === key ? "is-active" : ""}
+                  onClick={() => onRangeChange(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      />
+
+      <dl className="us-spend-summary">
+        <SpendFact
+          label="5-hour remaining"
+          value={fiveHour?.remaining == null ? "—" : formatUsd(fiveHour.remaining)}
+          detail={fiveHour?.limit == null ? "No current meter" : `${formatUsd(fiveHour.used || 0)} used of ${formatUsd(fiveHour.limit)}`}
+        />
+        <SpendFact
+          label="7-day remaining"
+          value={weekly?.remaining == null ? "—" : formatUsd(weekly.remaining)}
+          detail={weekly?.limit == null ? "No current meter" : `${formatUsd(weekly.used || 0)} used of ${formatUsd(weekly.limit)}`}
+        />
+        <SpendFact
+          label="Free tokens"
+          value={freeTokens?.remaining == null ? "—" : compactNumber(freeTokens.remaining)}
+          detail={freeTokens?.limit == null ? "Daily free-model meter unavailable" : `${compactNumber(freeTokens.used || 0)} used of ${compactNumber(freeTokens.limit)}`}
+        />
+        <SpendFact
+          label="Wallet"
+          value={wallet?.value == null ? "—" : formatUsd(wallet.value)}
+          detail={wallet?.detail || "Wallet balance"}
+        />
+        <SpendFact
+          label="Official 30-day"
+          value={history?.total?.spendUsd == null ? "—" : formatUsd(history.total.spendUsd)}
+          detail={history?.total
+            ? `${exactNumber(history.total.requests)} requests · ${compactNumber(history.total.tokens)} tokens`
+            : "30-day history unavailable"}
+        />
+        <SpendFact
+          label="Local attributed"
+          value={formatUsd(window.usageValueUsd, knownMinimum)}
+          detail={`${window.pricedRequests}/${window.requests} requests priced · ${coverage}% coverage`}
+        />
+        <SpendFact
+          label="Unattributed"
+          value={unattributed == null ? "—" : formatUsd(unattributed)}
+          detail={unattributed == null
+            ? "No directly comparable official total for this range"
+            : "Official spend minus locally attributable Router traffic"}
+        />
+      </dl>
+
+      {window.models.length ? (
+        <div className="us-spend-table-wrap">
+          <table className="us-spend-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Local value</th>
+                <th>Runs</th>
+                <th>Input</th>
+                <th>Cache hit</th>
+                <th>Coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {window.models.map((model) => {
+                const partial = model.incompleteRequests > 0 || model.unpricedRequests > 0;
+                return (
+                  <tr key={model.slug}>
+                    <td>
+                      <strong>{model.displayName}</strong>
+                      <small>{model.accessTier ? `${model.accessTier} · ${model.slug}` : model.slug}</small>
+                    </td>
+                    <td>{model.pricedRequests ? formatUsd(model.usageValueUsd, partial) : "—"}</td>
+                    <td>{exactNumber(model.requests)}</td>
+                    <td>{compactNumber(model.inputTokens)}</td>
+                    <td>{model.cacheHitPercent == null ? "—" : `${model.cacheHitPercent.toFixed(1)}%`}</td>
+                    <td>
+                      {model.pricedRequests}/{model.requests}
+                      {model.retrospectiveRequests > 0 ? <small>reconstructed {model.retrospectiveRequests}</small> : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState
+          icon={<Coins size={20} />}
+          title="No Xkiro requests in this range"
+          body="Official account limits are still shown above; per-model spend appears after Router traffic is observed."
+        />
+      )}
+
+      {spend.recentRequests.length ? (
+        <div className="us-spend-recent">
+          <div className="us-spend-recent-heading">
+            <div>
+              <strong>Recent Xkiro requests</strong>
+              <small>{provider?.displayName || active.id} · local Router ledger</small>
+            </div>
+            <span>{spend.recentRequests.length} latest</span>
+          </div>
+          <div className="us-spend-table-wrap">
+            <table className="us-spend-table us-spend-recent-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Model</th>
+                  <th>Local value</th>
+                  <th>Output</th>
+                  <th>Input / cache</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {spend.recentRequests.map((request, index) => (
+                  <tr key={`${request.at}:${request.slug}:${index}`}>
+                    <td><time dateTime={request.at}>{formatRecentTime(request.at)}</time></td>
+                    <td>
+                      <strong>{request.displayName}</strong>
+                      <small>{request.slug}</small>
+                    </td>
+                    <td>{request.usageValueUsd == null ? "—" : formatUsd(request.usageValueUsd, !request.complete)}</td>
+                    <td>{request.outputTokens == null ? "—" : exactNumber(request.outputTokens)}</td>
+                    <td>{formatRecentInput(request)}</td>
+                    <td>
+                      <span className={request.status >= 200 && request.status < 300 ? "us-spend-status is-ok" : "us-spend-status is-error"}>
+                        {request.status || "—"}
+                      </span>
+                      <small>{formatDurationMs(request.durationMs)}</small>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      <p className="us-spend-note">
+        Xkiro's 5-hour, 7-day, wallet, free-token, and 30-day totals are authoritative provider data. Model rows are Router-local attribution using the price snapshot recorded with each request.
+        {knownMinimum ? " A ≥ value is a known minimum where exact cache-write or prompt usage was unavailable." : ""}
+        {window.unpricedRequests > 0 ? " Historical requests recorded before Xkiro price snapshots were enabled remain visible by tokens and runs but are not assigned a dollar value." : ""}
+      </p>
+    </section>
+  );
+}
+
 function SpendFact({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div>
@@ -666,7 +990,11 @@ function formatDurationMs(value: number): string {
   return value < 1_000 ? `${Math.round(value)} ms` : `${(value / 1_000).toFixed(1)} s`;
 }
 
-function formatRecentInput(request: CommandCodeSpendSnapshot["recentRequests"][number]): string {
+function formatRecentInput(request: {
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  estimatedInputTokens?: number;
+}): string {
   const input = request.inputTokens;
   if (input != null && input > 0) {
     const cached = request.cachedInputTokens || 0;

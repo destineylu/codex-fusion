@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "slug": "xkiro2/anthropic/claude-opus-5",
+      "gatewayModel": "xkiro2-anthropic-claude-opus-5",
+      "upstreamModel": "anthropic/claude-opus-5",
+      "provider": "xkiro2",
+      "listed": true,
+      "displayName": "Claude Opus 5 (Xkiro #2)",
+      "description": "Claude Opus 5 through the second Xkiro API account.",
+      "priority": 157,
+      "defaultEffort": "high",
+      "reasoningLevels": [
+        { "effort": "high", "description": "Adaptive reasoning" }
+      ],
+      "contextWindow": 1000000,
+      "autoCompact": 850000,
+      "inputModalities": ["text", "image"],
+      "compHash": "xkiro2-anthropic-claude-opus-5-v1"
+    }
+  ]
+}

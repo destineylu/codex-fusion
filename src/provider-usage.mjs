@@ -1,6 +1,7 @@
 import { PROVIDERS } from "./model-registry.mjs";
 import { aggregateCommandCodeSpend } from "./commandcode-billing.mjs";
 import { providerAccountUsageSnapshot } from "./provider-account-usage.mjs";
+import { aggregateXkiroSpend } from "./xkiro-billing.mjs";
 import { canonicalProviderId, readProviderSelection } from "./provider-selection.mjs";
 import { allUsageEvents } from "./usage-events.mjs";
 
@@ -370,12 +371,27 @@ export async function providerUsageSnapshot(options = {}) {
     fiveHourStart: windowStartFromReset(commandCodeMetric("5-hour limit"), 5 * 60 * 60 * 1_000),
     weeklyStart: windowStartFromReset(commandCodeMetric("Weekly limit"), 7 * 24 * 60 * 60 * 1_000),
   });
+  const xkiroSpend = Object.fromEntries(["xkiro", "xkiro2"].map((providerId) => {
+    const account = accounts[providerId];
+    const metric = (label) =>
+      account?.metrics?.find((entry) => entry?.kind === "quota" && entry.label === label);
+    return [providerId, {
+      ...aggregateXkiroSpend(retainedEvents, {
+        providerId,
+        now,
+        fiveHourStart: windowStartFromReset(metric("5-hour limit"), 5 * 60 * 60 * 1_000),
+        weeklyStart: windowStartFromReset(metric("7-day limit"), 7 * 24 * 60 * 60 * 1_000),
+      }),
+      ...(typeof account?.plan === "string" ? { plan: account.plan } : {}),
+    }];
+  }));
   return {
     ...snapshot,
     commandCodeSpend: {
       ...commandCodeSpend,
       ...(typeof commandCodeAccount?.plan === "string" ? { plan: commandCodeAccount.plan } : {}),
     },
+    xkiroSpend,
     retained: {
       fetchedAt: retained.fetchedAt,
       scope: "local-router-retained",
