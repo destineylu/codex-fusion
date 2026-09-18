@@ -1,0 +1,249 @@
+export type PresenceMode = "always" | "follow-codex";
+export type SubagentMode = "all" | "selected" | "proven";
+export type VisionEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "default";
+export type ServiceAction = "status" | "start";
+export type TrayAction = "enable" | "disable" | "status" | "restart";
+export type HarnessId = "codex" | "deepcode";
+export type HarnessSurface = "app" | "terminal";
+
+export interface HarnessDescriptor {
+  id: HarnessId;
+  displayName: string;
+  ownership: "openai" | "third-party";
+  description: string;
+  cliInstalled: boolean;
+  cliVersion?: string;
+  appInstalled: boolean;
+  configured: boolean;
+  canInstall: boolean;
+  installRequirement?: string;
+  docsUrl: string;
+}
+
+export interface HarnessSnapshot {
+  platform: string;
+  terminalAvailable: boolean;
+  harnesses: HarnessDescriptor[];
+}
+
+export type CodexSkillCategory = "core" | "specialized" | "invalid" | "plugin-cache";
+
+export interface CodexSkillEntry {
+  name: string;
+  source: string;
+  path?: string;
+  description?: string;
+  category: CodexSkillCategory;
+  state: string;
+  enabled: boolean;
+  temporary: boolean;
+  promptEligible?: boolean;
+  estimatedPromptTokens: number;
+  estimatedEnabledPromptTokens: number;
+  validationMessage?: string;
+  pluginId?: string;
+}
+
+export interface CodexSkillControlSnapshot {
+  supported: boolean;
+  why?: string;
+  scriptPath?: string;
+  defaultMode?: "light";
+  defaultedToLight?: boolean;
+  mode?: "light" | "full" | "unknown";
+  modeLabel?: string;
+  model?: string;
+  modelProvider?: string;
+  temporaryExceptions?: number;
+  disabledEntries?: number;
+  specializedCandidates?: number;
+  coreSkills?: number;
+  specializedSkills?: number;
+  invalidSkills?: number;
+  pluginCacheSkills?: number;
+  estimatedPromptTokens?: number;
+  skills: CodexSkillEntry[];
+}
+
+export interface HarnessSession {
+  id: string;
+  harnessId: HarnessId;
+  title: string;
+  updatedAt: string;
+  createdAt?: string;
+  workspace?: string;
+  workspaceLabel?: string;
+  model?: string;
+  modelHistory?: string[];
+  provider?: string;
+  effort?: string;
+  originator?: string;
+  status?: string;
+  archived: boolean;
+  resumable: boolean;
+  activeTokens?: number;
+  contextWindow?: number;
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  totalTokens?: number;
+  requestCount?: number;
+}
+
+export interface ContextSessionsSnapshot {
+  fetchedAt: string;
+  sessions: HarnessSession[];
+  counts: { total: number; codex: number; deepcode: number; archived: number };
+}
+
+export type CodexAgentMode = "single" | "team";
+export type CodexAutoResumeAction = "install" | "doctor" | "dry-run" | "enable-autostart" | "disable-autostart" | "enable-reset-credit" | "disable-reset-credit";
+export type CodexChatGptWebAction = "install" | "start-managed" | "show-managed" | "start-daemon" | "stop-managed" | "verify-isolation";
+export type CodexRouteOwner = "router" | "chatgpt-web" | "native" | "other" | "unknown";
+
+export interface CodexAgentModeSnapshot {
+  supported: boolean;
+  mode: CodexAgentMode | "unknown";
+  projectRoot?: string;
+  why?: string;
+}
+
+export interface CodexAutoResumeThread {
+  threadId: string;
+  enabled: boolean;
+  status: string;
+  resumes: number;
+  lastError?: string;
+}
+
+export interface CodexAutoResumeSnapshot {
+  supported: boolean;
+  installed: boolean;
+  root: string;
+  stateDir: string;
+  repository: string;
+  version?: string;
+  running: boolean;
+  autostart: boolean;
+  enabled?: boolean;
+  autoRedeemWeeklyReset?: boolean;
+  lastStatus?: string;
+  lastCheckedAt?: number;
+  trackedThreads: number;
+  activeThreads: number;
+  threads: CodexAutoResumeThread[];
+  why?: string;
+  report?: string;
+}
+
+export interface CodexChatGptWebSnapshot {
+  supported: boolean;
+  installed: boolean;
+  repository: string;
+  auditedVersion: string;
+  providerId: string;
+  launcherPath?: string;
+  home: string;
+  shadowCodexHome: string;
+  launcherDataDir: string;
+  running: boolean;
+  daemonRunning: boolean;
+  bridgeReachable: boolean;
+  daemonEndpoint: string;
+  supervisorStatus?: string;
+  browserReady: boolean;
+  onboardingComplete: boolean;
+  browserSmokePassed: boolean;
+  configured: boolean;
+  daemonOwner: "router" | "upstream" | "none";
+  routeOwner: CodexRouteOwner;
+  routeDisplay: string;
+  directRouteConflict: boolean;
+  safeToDiscover: boolean;
+  upstreamExternalProviderSupported: boolean;
+  why?: string;
+  report?: string;
+}
+
+export interface ChatGptSessionStatus {
+  sharing: "enabled" | "disabled";
+  session: "usable" | "expired" | "unavailable";
+  present: boolean;
+  expiresInHours?: number;
+}
+
+export interface RouterControl {
+  readonly platform: string;
+  minimizeWindow(): Promise<unknown>;
+  toggleMaximizeWindow(): Promise<unknown>;
+  closeWindow(): Promise<unknown>;
+  getSnapshot(): Promise<unknown>;
+  getChatGptSession(): Promise<ChatGptSessionStatus>;
+  getHealth(): Promise<unknown>;
+  getProviders(): Promise<unknown>;
+  discoverProviderModels(provider: string, options?: { refresh?: boolean }): Promise<unknown>;
+  verifyProviderModel(provider: string, modelId: string): Promise<unknown>;
+  getAccountUsage(): Promise<unknown>;
+  getProviderUsage(): Promise<unknown>;
+  getLocalModels(): Promise<unknown>;
+  getVisionBridge(): Promise<unknown>;
+  getToolResultAging(): Promise<unknown>;
+  getDoctor(): Promise<unknown>;
+  getPresence(): Promise<unknown>;
+  getHarnesses(): Promise<HarnessSnapshot>;
+  getCodexSkillControl(): Promise<CodexSkillControlSnapshot>;
+  getCodexAgentMode(): Promise<CodexAgentModeSnapshot>;
+  getCodexAutoResume(): Promise<CodexAutoResumeSnapshot>;
+  getCodexChatGptWeb(): Promise<CodexChatGptWebSnapshot>;
+  getContextSessions(): Promise<ContextSessionsSnapshot>;
+  refreshAll(): Promise<unknown>;
+  setProviderEnabled(provider: string, enabled: boolean): Promise<unknown>;
+  addProviderModels(provider: string, modelIds: string[]): Promise<unknown>;
+  connectProvider(provider: string): Promise<unknown>;
+  saveProviderCredential(provider: string, credential: string): Promise<unknown>;
+  removeProviderCredential(provider: string): Promise<unknown>;
+  setSubagentMode(mode: SubagentMode): Promise<unknown>;
+  setSubagentModel(slug: string, enabled: boolean): Promise<unknown>;
+  setSubagentEffort(slug: string, effort: string): Promise<unknown>;
+  setSubagentSelection(selectAll: boolean): Promise<unknown>;
+  setPickerModel(slug: string, visible: boolean): Promise<unknown>;
+  setPickerModels(showAll: boolean): Promise<unknown>;
+  installLocalModel(model: string, force?: boolean): Promise<unknown>;
+  installLocalMlx(): Promise<unknown>;
+  cancelLocalMlx(): Promise<unknown>;
+  uninstallLocalModel(model: string): Promise<unknown>;
+  setLocalModelEnabled(model: string, enabled: boolean): Promise<unknown>;
+  benchmarkLocalModel(model: string): Promise<unknown>;
+  controlLocalRuntime(action: "start" | "update"): Promise<unknown>;
+  setVisionBridgeEnabled(enabled: boolean): Promise<unknown>;
+  setVisionBridgeEngine(engine: string, effort?: VisionEffort): Promise<unknown>;
+  setVisionBridgeEffort(effort: VisionEffort): Promise<unknown>;
+  setContextEconomy(enabled: boolean): Promise<unknown>;
+  downloadVisionModel(model: string): Promise<unknown>;
+  useLocalVisionModel(model: string): Promise<unknown>;
+  benchmarkVisionModel(model: string): Promise<unknown>;
+  setToolResultAging(enabled: boolean): Promise<unknown>;
+  setNativeToolResultAging(enabled: boolean): Promise<unknown>;
+  setToolResultRetentionTtl(days: number | "default" | "off"): Promise<unknown>;
+  setDefaultModel(model: string): Promise<unknown>;
+  setRouterDefault(model: string): Promise<unknown>;
+  clearRouterDefault(): Promise<unknown>;
+  setSignedRouting(enabled: boolean): Promise<unknown>;
+  setChatGptSessionSharing(enabled: boolean): Promise<ChatGptSessionStatus>;
+  setPresence(mode: PresenceMode): Promise<unknown>;
+  controlService(action: ServiceAction): Promise<unknown>;
+  controlTray(action: TrayAction): Promise<unknown>;
+  setCodexAgentMode(mode: CodexAgentMode): Promise<CodexAgentModeSnapshot>;
+  controlCodexAutoResume(action: CodexAutoResumeAction): Promise<CodexAutoResumeSnapshot>;
+  controlCodexChatGptWeb(action: CodexChatGptWebAction): Promise<CodexChatGptWebSnapshot>;
+  setCodexContextMode(mode: "light" | "full"): Promise<CodexSkillControlSnapshot>;
+  setCodexSkillException(skillName: string, enabled: boolean): Promise<CodexSkillControlSnapshot>;
+  launchHarness(harnessId: HarnessId, surface: HarnessSurface): Promise<unknown>;
+  installHarness(harnessId: "deepcode"): Promise<unknown>;
+  openHarnessSession(harnessId: HarnessId, sessionId: string, surface: HarnessSurface, model?: string): Promise<unknown>;
+  openExternal(url: string): Promise<void>;
+  onNavigation?(listener: (request: {
+    destination: "usage" | "usage-resets";
+    sourceId?: string;
+  }) => void): () => void;
+  onOperation(listener: (event: { id?: string; name?: string; action?: string; status: string; message?: string; error?: string }) => void): () => void;
+}

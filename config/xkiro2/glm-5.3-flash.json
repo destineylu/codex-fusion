@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "slug": "xkiro2/z-ai/glm-5.3-flash",
+      "gatewayModel": "xkiro2-z-ai-glm-5-3-flash",
+      "upstreamModel": "z-ai/glm-5.3-flash",
+      "provider": "xkiro2",
+      "listed": true,
+      "displayName": "GLM-5.3 Flash (Xkiro #2)",
+      "description": "GLM-5.3 Flash through the second Xkiro API account.",
+      "priority": 153,
+      "defaultEffort": "high",
+      "reasoningLevels": [
+        { "effort": "high", "description": "Deep reasoning" }
+      ],
+      "contextWindow": 1000000,
+      "autoCompact": 850000,
+      "inputModalities": ["text", "image"],
+      "compHash": "xkiro2-z-ai-glm-5-3-flash-v1"
+    }
+  ]
+}

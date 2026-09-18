@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "chatgpt-web",
+      "displayName": "ChatGPT Web Bridge",
+      "kind": "openai-compatible",
+      "ownedBy": "codex-chatgpt-web",
+      "protocol": "openai-responses",
+      "baseUrl": "http://127.0.0.1:17841/v1",
+      "baseUrlEnv": "CODEX_ROUTER_CHATGPT_WEB_BASE_URL",
+      "keyless": true,
+      "nativeSessionAuth": true,
+      "defaultEnabled": false,
+      "planNote": "Local codex-chatgpt-web sidecar. Codex itself must remain routed through Codex Router; do not install the upstream direct Codex route."
+    }
+  ]
+}

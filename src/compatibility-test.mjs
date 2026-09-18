@@ -1,0 +1,291 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { redactCallerUrl } from "./caller-auth.mjs";
+import { EXACT_ROUTE_PROBE_HEADER } from "./exact-route-probe.mjs";
+import { MODEL_BY_SLUG, PROVIDERS } from "./model-registry.mjs";
+import {
+  installedRouterBaseUrl,
+  smokeTestModel,
+} from "./smoke-test.mjs";
+
+function nativeSessionModel(model) {
+  const route = MODEL_BY_SLUG.get(model);
+  return Boolean(route && PROVIDERS.get(route.provider)?.nativeSessionAuth);
+}
+
+function normalizedProbeText(model, value) {
+  const text = String(value || "");
+  return nativeSessionModel(model) ? text.replace(/\\([_*~`])/g, "$1") : text;
+}
+
+function nativeProbeInput(model, body, requestKind = "turn") {
+  if (!nativeSessionModel(model)) return body;
+
+  const threadId = randomUUID();
+  const turnId = randomUUID();
+  const cwd = process.cwd();
+  const passthrough = { turn_id: turnId };
+  const metadata = {
+    thread_id: threadId,
+    turn_id: turnId,
+    request_kind: requestKind,
+    sandbox: "workspace-write",
+    workspaces: { [cwd]: {} },
+  };
+  const environment = [
+    "<environment_context>",
+    `  <cwd>${cwd}</cwd>`,
+    "  <workspace_roots>",
+    `    <root>${cwd}</root>`,
+    "  </workspace_roots>",
+    "  <sandbox_mode>workspace-write</sandbox_mode>",
+    "</environment_context>",
+  ].join("\n");
+  const envMessage = {
+    type: "message",
+    id: `msg_env_${randomUUID().replaceAll("-", "")}`,
+    role: "user",
+    content: [{ type: "input_text", text: environment }],
+    internal_chat_message_metadata_passthrough: passthrough,
+  };
+
+  let input;
+  if (typeof body.input === "string") {
+    input = [
+      envMessage,
+      {
+        type: "message",
+        id: `msg_user_${randomUUID().replaceAll("-", "")}`,
+        role: "user",
+        content: [{ type: "input_text", text: body.input }],
+        internal_chat_message_metadata_passthrough: passthrough,
+      },
+    ];
+  } else {
+    const source = Array.isArray(body.input) ? body.input : [];
+    input = [
+      envMessage,
+      ...source.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item) || item.role !== "user") return item;
+        return {
+          ...item,
+          type: item.type || "message",
+          id: item.id || `msg_user_${randomUUID().replaceAll("-", "")}`,
+          internal_chat_message_metadata_passthrough: {
+            ...(item.internal_chat_message_metadata_passthrough || {}),
+            turn_id: turnId,
+          },
+        };
+      }),
+    ];
+  }
+
+  return {
+    ...body,
+    input,
+    prompt_cache_key: body.prompt_cache_key || threadId,
+    client_metadata: {
+      ...(body.client_metadata || {}),
+      "x-codex-turn-metadata": JSON.stringify(metadata),
+    },
+  };
+}
+
+function responseText(payload) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  return (payload?.output || [])
+    .flatMap((item) => item?.content || [])
+    .map((part) => part?.text)
+    .filter((value) => typeof value === "string")
+    .join("\n");
+}
+
+async function request(suffix, body, timeoutMs = 180_000, model, requestKind = "turn") {
+  const response = await fetch(`${installedRouterBaseUrl()}${suffix}`, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer codex-router-local-compatibility-test",
+      "Content-Type": "application/json",
+      [EXACT_ROUTE_PROBE_HEADER]: "1",
+    },
+    body: JSON.stringify(model ? nativeProbeInput(model, body, requestKind) : body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const payload = await response.json().catch(() => ({}));
+  return { response, payload };
+}
+
+async function toolCall(model) {
+  const route = MODEL_BY_SLUG.get(model);
+  // Command Code rejects provider-facing function names over 64 characters.
+  // Use a deliberately longer native name here so the final routed proof also
+  // verifies the router's deterministic alias + reverse-restore path instead
+  // of passing only because the historical probe name happened to be short.
+  const toolName = route?.provider === "commandcode"
+    ? `codex_router_probe_commandcode_${"long_tool_name_".repeat(3)}`
+    : "codex_router_probe";
+  const { response, payload } = await request("/responses", {
+    model,
+    stream: false,
+    input: "Call the provided compatibility function exactly once with value set to ok. Do not answer normally.",
+    tools: [
+      {
+        type: "function",
+        name: toolName,
+        description: "Compatibility probe",
+        parameters: {
+          type: "object",
+          properties: { value: { type: "string" } },
+          required: ["value"],
+          additionalProperties: false,
+        },
+        strict: true,
+      },
+    ],
+    tool_choice: "required",
+  }, 180_000, model, "turn");
+  const call = (payload?.output || []).find(
+    (item) => item?.type === "function_call" && item?.name === toolName,
+  );
+  let argumentsValid = false;
+  try {
+    argumentsValid = JSON.parse(call?.arguments || "{}").value === "ok";
+  } catch {
+    // Invalid tool arguments are a compatibility failure.
+  }
+  return {
+    ok: response.ok && Boolean(call) && argumentsValid,
+    status: response.status,
+    detail: call && argumentsValid ? "function call and JSON arguments verified" : responseText(payload) || payload?.error?.message || "function call missing",
+  };
+}
+
+async function streaming(model) {
+  const marker = "CODEX_ROUTER_STREAM_OK";
+  const response = await fetch(`${installedRouterBaseUrl()}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer codex-router-local-compatibility-test",
+      "Content-Type": "application/json",
+      [EXACT_ROUTE_PROBE_HEADER]: "1",
+    },
+    body: JSON.stringify(nativeProbeInput(model, {
+      model,
+      stream: true,
+      input: `Reply with exactly ${marker} and nothing else.`,
+    }, "turn")),
+    signal: AbortSignal.timeout(180_000),
+  });
+  const body = await response.text();
+  const streamedText = body
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .filter((line) => line && line !== "[DONE]")
+    .map((line) => {
+      try {
+        const event = JSON.parse(line);
+        return event.delta || event.text || event.output_text || "";
+      } catch {
+        return "";
+      }
+    })
+    .join("");
+  const completed = /response\.(?:completed|done)|\[DONE\]/.test(body);
+  return {
+    ok: response.ok && (normalizedProbeText(model, body).includes(marker) || normalizedProbeText(model, streamedText).includes(marker)) && completed,
+    status: response.status,
+    detail: response.ok ? "stream text and completion event verified" : `HTTP ${response.status}`,
+  };
+}
+
+async function compaction(model) {
+  const { response, payload } = await request("/responses/compact", {
+    model,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Remember that the probe value is 42." }],
+      },
+    ],
+  }, 180_000, model, "compaction");
+  const text = responseText(payload);
+  return {
+    ok: response.ok && Boolean(text),
+    status: response.status,
+    detail: response.ok && text ? "compaction response verified" : payload?.error?.message || `HTTP ${response.status}`,
+  };
+}
+
+// The two capabilities a Codex spawn actually exercises, and nothing else:
+// a child turn is a streamed conversation driven by tool calls, so a model
+// that streams and answers a forced tool call can hold the child role. Basic
+// text and compaction stay out — this probe runs automatically when a model
+// is switched on as a subagent, and two requests is its whole quota budget.
+export async function subagentCapabilityProbe(model) {
+  if (!MODEL_BY_SLUG.has(model)) throw new Error(`Unknown registry model: ${model}`);
+  const checks = [
+    { name: "tool calling", ...(await toolCall(model)) },
+    { name: "streaming", ...(await streaming(model)) },
+  ];
+  return {
+    model,
+    ok: checks.every((check) => check.ok),
+    checks,
+    detail: checks
+      .filter((check) => !check.ok)
+      .map((check) => `${check.name}: ${check.detail}`)
+      .join("; "),
+  };
+}
+
+export async function compatibilityTest(model, options = {}) {
+  if (!MODEL_BY_SLUG.has(model)) throw new Error(`Unknown registry model: ${model}`);
+  const results = [];
+  const basic = await smokeTestModel(model);
+  results.push({ name: "basic response", ...basic });
+  if (!options.quick) {
+    results.push({ name: "streaming", ...(await streaming(model)) });
+    results.push({ name: "tool calling", ...(await toolCall(model)) });
+    results.push({ name: "compaction", ...(await compaction(model)) });
+  }
+  return { model, ok: results.every((result) => result.ok), results };
+}
+
+async function main() {
+  if (process.argv.includes("--help")) {
+    process.stdout.write(`Usage: test-model MODEL --live --yes [--quick] [--json]
+
+Runs billed live checks for text, streaming, tool calling, and compaction through
+the installed router. Both --live and --yes are required to prevent accidental
+provider charges. --quick runs only the basic response check.
+`);
+    return;
+  }
+  const model = process.argv.slice(2).find((value) => !value.startsWith("--"));
+  if (!model) throw new Error("Pass a namespaced registry model id.");
+  if (!process.argv.includes("--live") || !process.argv.includes("--yes")) {
+    throw new Error("Live compatibility checks may use provider quota; pass --live --yes to confirm.");
+  }
+  const result = await compatibilityTest(model, { quick: process.argv.includes("--quick") });
+  if (process.argv.includes("--json")) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    for (const check of result.results) {
+      process.stdout.write(`${check.ok ? "PASS" : "FAIL"} ${check.name}: ${check.detail || check.error}\n`);
+    }
+  }
+  if (!result.ok) process.exitCode = 1;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(
+      redactCallerUrl(error instanceof Error ? error.message : String(error)),
+    );
+    process.exit(1);
+  });
+}

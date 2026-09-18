@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "slug": "xkiro2/anthropic/claude-fable-5-1",
+      "gatewayModel": "xkiro2-anthropic-claude-fable-5-1",
+      "upstreamModel": "anthropic/claude-fable-5-1",
+      "provider": "xkiro2",
+      "listed": true,
+      "displayName": "Fable 5.1 (Xkiro #2)",
+      "description": "Anthropic Fable 5.1 through the second Xkiro API account.",
+      "priority": 158,
+      "defaultEffort": "high",
+      "reasoningLevels": [
+        { "effort": "high", "description": "Adaptive reasoning" }
+      ],
+      "contextWindow": 1000000,
+      "autoCompact": 260000,
+      "inputModalities": ["text", "image"],
+      "compHash": "xkiro2-anthropic-claude-fable-5-1-v1"
+    }
+  ]
+}
