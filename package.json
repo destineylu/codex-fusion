@@ -10,7 +10,8 @@
   "scripts": {
     "check": "node scripts-check.mjs",
     "test": "node --test test/*.test.mjs",
-    "upstream:status": "node scripts/upstream-status.mjs"
+    "upstream:status": "node scripts/upstream-status.mjs",
+    "release:verify": "npm --prefix apps/control-center run check && node scripts/reproducible-v1-check.mjs && node --test test/installer-scripts.test.mjs test/control-center-electron.test.mjs test/update-target.test.mjs"
   },
   "dependencies": {
     "proper-lockfile": "4.1.2",

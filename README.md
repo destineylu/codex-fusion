@@ -2,7 +2,710 @@
 
 This repository is the **destineylu enhanced distribution** of Codex Router. End-user installs and self-updates follow `destineylu/codex-router`, while the original `duolahypercho/codex-router` repository remains configured as a reference upstream for reviewed upgrades. ChatGPT Web and Codex Auto Resume are likewise pinned to audited upstream revisions instead of auto-updating behind the operator's back. See [`docs/REPRODUCIBLE-V1.md`](docs/REPRODUCIBLE-V1.md) for the distribution and upgrade contract.
 
-## Install everything (recommended)
+## 中文：从零开始，照着做即可完成安装
+
+这一版不是单独的 Router，而是把几套已经验证过的能力组合在一起，同时保持它们彼此隔离：
+
+| 组件 | 作用 | 是否必须 |
+| --- | --- | --- |
+| Codex Router | 让 Codex 使用 DeepSeek、Claude、GLM、Kimi、xKiro、Command Code、OpenRouter 等外部模型 | 必须 |
+| Control Center | 图形化管理 Provider、模型、Usage、Settings、ChatGPT Web、Auto Resume | Windows 推荐安装 |
+| ChatGPT Web Bridge | 把你自己的 ChatGPT Web 账户作为 Codex 模型使用，不走普通模型 API | 可选 |
+| Codex Native2 Full Harness | 让 ChatGPT Web 模型继续使用当前 Codex 的本地工具、命令、补丁等能力 | 可选，高级 |
+| Codex Auto Resume | 原生 Codex 因额度用尽停止后，在额度恢复时继续原 thread | 可选 |
+| Single / Team | 对指定项目切换 Codex Native Multi-Agent 能力 | 可选，项目级 |
+| ComfyUI Port | Codex 的 ComfyUI 工作流/面板集成 | 可选，独立仓库，不随 Router 自动安装 |
+
+### 先选你的使用方式
+
+如果你是第一次安装，先确定自己属于下面哪一种。**不要为了“功能多”把所有东西一次性全开。**
+
+**A. 只想在 Codex 中使用普通 API / 订阅 Provider**，例如 DeepSeek、OpenRouter、Command Code、xKiro、xKiro2、Anthropic、GLM 等：使用下面的“API Provider 路线”。
+
+**B. 只想使用 ChatGPT Web，不准备配置其他 API Provider**：安装 Router 时用 `-NoProvider`，然后在 Control Center 里安装 ChatGPT Web。不要用 `-NoDiscovery`，因为后面仍需要正常发现本机的 ChatGPT Web Provider。
+
+**C. 想让 ChatGPT Web 不但能回答，还能继续使用 Codex 的本地工具**：先完成 B，再完成“Full Harness / Tunnel”章节。Browser-only 能聊天，但没有完整本地工具；Full Harness 才把工具调用接回当前 Codex task。
+
+### 第 0 步：Windows 安装前准备
+
+当前组合版最完整、验收最充分的是 **Windows 11 x64 + Codex Desktop**。Router 本身也支持 macOS/Linux，但本仓库的 guarded ChatGPT Web Control Center 安装器目前只对 Windows x64 开放。
+
+先安装以下软件：
+
+1. **Codex Desktop 或 Codex CLI**。如果准备使用原生 GPT，也先在 Codex 中完成你的 OpenAI/ChatGPT 登录。
+2. **Git for Windows**。
+3. **Node.js 22.19+**，推荐 Node.js 24 LTS。
+4. **Python 3.10+**，推荐 Python 3.12。也可以安装 `uv`；安装器会优先使用 `uv`，没有时使用 Python `venv`。
+
+Windows 11 可以在管理员或普通 PowerShell 中使用 `winget`：
+
+```powershell
+winget install --id Git.Git -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id Python.Python.3.12 -e
+```
+
+安装完成后**关闭当前 PowerShell，重新打开一个新的 PowerShell**，然后检查：
+
+```powershell
+git --version
+node --version
+npm --version
+python --version
+```
+
+正常情况下至少应看到：
+
+```text
+Git 有版本号
+Node >= 22.19.0
+npm 有版本号
+Python >= 3.10
+```
+
+如果 `python` 命令不存在但你已经安装 `uv`，也可以继续；如果 Node 或 Git 不存在，不要继续安装 Router。
+
+### 第 1 步：安装 Router + Control Center
+
+#### 路线 A：准备使用普通 API Provider
+
+复制下面整段到 PowerShell：
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -WithTray
+```
+
+安装器会依次完成：
+
+```text
+下载 destineylu/codex-router
+→ 安装 Node / Python 依赖
+→ 选择 Provider
+→ 选择要显示的模型
+→ 安全输入 API Key / OAuth 登录
+→ 安装 Router 服务
+→ 写入 Codex Router 配置
+→ 构建并安装 Control Center / Tray
+```
+
+在 `Choose providers` 步骤中，用数字选择 Provider；再次输入同一数字可以切换选择。`a` 是全选，`n` 是全不选，直接 Enter 继续。
+
+在 `Choose models` 步骤中，只勾选真正想放进 Codex picker 的模型。Provider 被启用并不代表它整个 catalog 会自动塞进 picker。
+
+输入 API Key 时，使用安装器自己的安全输入提示。**不要把 API Key 写进安装命令，不要把 Key 发到聊天，不要保存到 README、issue 或 Git。**
+
+#### 路线 B：只准备使用 ChatGPT Web
+
+如果你暂时没有任何外部 API Key，使用空 Provider 安装：
+
+```powershell
+$installer = Join-Path $env:TEMP "codex-router-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -NoProvider -WithTray
+```
+
+这会先建立一个“空 Router”。此时外部模型流量还不能工作，这是正常状态；后面把 ChatGPT Web Provider 加进去以后才开始路由。
+
+> 不要加 `-NoDiscovery`。那个参数是做完全无凭据生命周期测试用的，会明确关闭凭据/会话发现，不适合作为 ChatGPT Web 的日常安装方式。
+
+### 第 2 步：确认 Router 基础安装成功
+
+默认安装目录：
+
+```text
+%LOCALAPPDATA%\codex-router
+```
+
+PowerShell 检查：
+
+```powershell
+cd "$env:LOCALAPPDATA\codex-router"
+.\model-router.ps1 codex status
+.\model-router.ps1 codex doctor
+```
+
+然后完全退出 Codex Desktop，再重新打开。**Codex 的模型目录在启动时读取，所以安装/添加模型后不重启 Codex，picker 可能仍然是旧的。**
+
+Control Center 正常有三种打开方式：
+
+- Windows 开始菜单中的 **Codex Router**；
+- 系统托盘中的 Codex Router 图标；
+- 如果桌面伴侣没有成功建立，可先执行 `cd "$env:LOCALAPPDATA\codex-router"`，再运行 `.\codex-router.ps1 panel` 打开浏览器控制面板；之后可运行 `.\codex-router.ps1 tray install` 修复桌面伴侣。
+
+基础成功标准：
+
+```text
+Router service = running
+health.ok = true
+Codex 重新打开后仍能启动任务
+Control Center 能打开
+```
+
+### 第 3 步：普通 API Provider 怎么连接
+
+如果第 1 步已经通过 Guided Installer 输入了 Key，可以直接跳到“重新打开 Codex”。如果想以后再添加 Provider，推荐使用 Control Center：
+
+1. 打开 **Control Center → Models**。
+2. 在顶部 **Connections** 点击 **Connect provider**。
+3. 选择 Provider，例如 DeepSeek、OpenRouter、Command Code、xKiro、xKiro2、Anthropic 等。
+4. API Provider 会出现密码输入框，把 Provider 官网生成的 Key 粘贴进去，点击 **Save credential**。
+5. Key 只通过受信任的 Electron → Router stdin 路径写入受保护状态；它不会进入命令参数、浏览器 localStorage 或 Git。
+6. 如果该 Provider 有动态 catalog，点击 **Add models**。
+7. 左侧选择 Provider，点击 **Fetch model list**。
+8. 勾选需要的模型，然后点击 **Add selected**。
+9. 如果某一模型显示 **Verify & add**，说明 Router 要求先做真实兼容性验证。这个动作会发出小型真实请求，可能消耗 Provider 额度；不想消耗时不要点。
+10. 添加完成后完全退出 Codex，再重新打开，模型才会稳定出现在 picker 中。
+
+命令行也可以做同样的事，例如 DeepSeek：
+
+```powershell
+cd "$env:LOCALAPPDATA\codex-router"
+.\model-router.ps1 codex provider-key deepseek set
+.\model-router.ps1 codex providers enable deepseek
+```
+
+然后按提示安全输入 Key。
+
+#### API Key 正确但仍然 401/403 时
+
+“有 Key”不等于“账户有该模型权限”。常见情况包括：
+
+- Command Code 的 Go 套餐不包含 Provider API；
+- ClinePass 需要有效订阅，只有 API Key 不够；
+- Venice、某些 reseller/provider 的模型权限与账户余额/套餐绑定；
+- 中国区和国际区 Kimi Key 不互通；
+- `xkiro` 与 `xkiro2` 是两个独立账户/凭据槽，不会自动共享 Key。
+
+遇到 401/403 时先检查 Provider 官网的套餐和模型权限，不要反复重装 Router。
+
+### 第 4 步：安装 ChatGPT Web Bridge（Browser-only 先跑通）
+
+ChatGPT Web Bridge 使用的是你自己的 ChatGPT 网页账户，不需要普通模型 Provider API Key。它是一个独立 sidecar，生产链路保持：
+
+```text
+Codex Desktop
+  → 4202 Codex Router
+  → 4203 native-session forwarder
+  → 127.0.0.1:17841 ChatGPT Web Bridge
+  → ChatGPT Web
+```
+
+**真实 Codex 必须始终由 Router 拥有路由。不要把 Codex 的 `openai_base_url` 直接改成 17841。**
+
+#### 4.1 安装经过审计的 launcher
+
+打开：
+
+```text
+Control Center → Settings → ChatGPT Web Bridge
+```
+
+点击：
+
+```text
+Install audited v5.0.8
+```
+
+本发行版不会下载“latest”后直接运行，而是固定下载已经审计的 v5.0.8，并校验安装包 SHA-256。该版本已知的 browser preflight 15 秒限制也只会在原始 `app.asar` hash 完全匹配时补成 60 秒；未知版本或未知 hash 会拒绝修改。
+
+看到：
+
+```text
+Launcher = Installed
+```
+
+再继续。
+
+#### 4.2 一定要用 Managed Start
+
+点击：
+
+```text
+Managed Start
+```
+
+**不要从 Windows 开始菜单直接启动 `Codex Web GPT`。**
+
+Managed Start 会给 launcher 注入独立的：
+
+```text
+CODEX_HOME
+launcher data directory
+managed browser profile
+```
+
+因此它无法把真实 Codex 从 Router 改成自己直连 17841。
+
+#### 4.3 在弹出的 Codex Web GPT 窗口登录 ChatGPT
+
+登录必须在 **Managed Start 打开的内嵌浏览器**里完成。你平常 Chrome 里已经登录 ChatGPT，并不代表这个隔离 profile 已登录。
+
+按 launcher 页面提示：
+
+1. 点击登录 ChatGPT。
+2. 在这个窗口中完成 OpenAI/ChatGPT 登录。
+3. 登录后回到 launcher 的 Setup 页面。
+4. 点击 **Browser smoke test** / **Run browser smoke test**。
+5. 等待测试通过。
+
+回到 Control Center，应看到：
+
+```text
+Browser host = Smoke passed
+```
+
+如果仍显示 `Sign in required`，说明登录或 smoke test 还没有在 managed profile 中完成。
+
+#### 4.4 启动 17841 bridge
+
+Browser smoke 通过后，Control Center 的 **Start 17841** 按钮会可用。点击它。
+
+正常状态应变成：
+
+```text
+Bridge daemon = Reachable
+owner = upstream
+Codex route owner = Router
+Router provider = Ready to discover
+```
+
+然后点击：
+
+```text
+Verify isolation
+```
+
+只有下面两个条件同时成立才继续：
+
+```text
+route owner = Router
+17841 reachable = true
+```
+
+如果看到 `Conflict`，停止后续操作。它表示真实 Codex 直接指向了 ChatGPT Web，而不是 Router；先运行 Router doctor/repair，不要用“能聊天就算了”的方式继续。
+
+#### 4.5 把你账户实际拥有的 ChatGPT Web 模型加入 Codex
+
+这一点很重要：**不要照抄维护者机器上的 light/medium/high 名称。**不同 ChatGPT 套餐、不同时间、不同 upstream launcher 可能暴露不同模型。发行版从 17841 动态读取你自己的账户 catalog。
+
+在 Control Center：
+
+1. 打开 **Models**。
+2. 在 **Connections** 找到 **ChatGPT Web Bridge**。
+3. 打开它的菜单，确认 Provider 处于 Enabled/启用状态。如果你是用 `-NoProvider` 安装，这一步尤其重要。
+4. 点击 **Add models**。
+5. 左侧选择 **ChatGPT Web Bridge**。
+6. 点击 **Fetch model list**。
+7. 等待出现 `chatgpt-web/...` 模型。
+8. 勾选你需要的模型，点击 **Add selected**。
+9. 如果某个新模型被标成 **Verify & add**，只有你愿意消耗一次小型真实 ChatGPT turn 时才点击。
+10. 添加后完全退出 Codex Desktop，再重新打开。
+
+在我们当前 Plus 验收账户上，v5.0.8 返回：
+
+```text
+chatgpt-web/light   → ChatGPT Web — Instant / 41K
+chatgpt-web/medium  → ChatGPT Web — Medium / 90K
+chatgpt-web/high    → ChatGPT Web — High / 90K
+```
+
+这只是一个已验证示例，不是对所有账户硬编码的列表。Free/Go/Pro 或未来版本可能不同，以你自己的 **Fetch model list** 结果为准。
+
+#### 4.6 Browser-only 验收
+
+重启 Codex 后，新建一个**新任务**，从 picker 选择一个 `ChatGPT Web — ...` 模型，先发最简单的：
+
+```text
+只回复：CHATGPT WEB OK
+```
+
+能正常流式返回，说明：
+
+```text
+Codex → Router → 17841 → ChatGPT Web
+```
+
+基础链路已经成立。
+
+Browser-only 模式主要证明 Web 模型能作为 Codex 模型回答；如果需要 `exec`、`apply_patch`、文件访问等完整本地工具，再继续下一节。
+
+### 第 5 步：Full Harness — 配置 Tunnel、API Key 和 `Codex Native2`
+
+Full Harness 的目标是：ChatGPT Web 模型提出工具调用时，通过 OpenAI Secure MCP Tunnel 回到当前 Codex task 的本地工具 harness，而不是让浏览器自己直接操作你的电脑。
+
+逻辑是：
+
+```text
+ChatGPT Web
+  → Codex Native2 connector
+  → OpenAI Secure MCP Tunnel
+  → 本机 Codex Native2 Full Harness
+  → exec / apply_patch / tool inventory / view image / write stdin ...
+```
+
+Tunnel 是**出站连接**，不需要给电脑开放公网端口，也不需要路由器做端口转发。OpenAI 官方 Secure MCP Tunnel 文档：<https://developers.openai.com/api/docs/guides/secure-mcp-tunnels>；ChatGPT Developer Mode / MCP App 文档：<https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt>；本项目采用的 ChatGPT Web 上游：<https://github.com/miuuyy/codex-chatgpt-web>。
+
+> ChatGPT 的 Developer Mode、自定义 MCP/App、Secure MCP Tunnel 和写入权限属于 OpenAI 账户/工作区能力。是否能看到这些入口，以你的 ChatGPT 账户实际 UI 和工作区管理员策略为准。OpenAI 的能力和权限会变化；如果你的账户没有 Developer Mode/Tunnel/自定义 App 入口，不要尝试绕过，先使用 Browser-only。上游 `codex-chatgpt-web` 也把 Full Harness 作为额外设置，而不是 Browser-only 的前置条件。OpenAI 当前公开文档说明：完整 MCP 的 write/modify 能力主要在 Business、Enterprise、Edu 逐步开放，Pro 的公开能力可能只有 read/fetch；因此个人 Plus/Pro 即使 Browser-only 正常，也不能仅凭本仓库保证“Allow all actions”一定可用。只有你的实际 ChatGPT UI 允许创建相应 connector，并且 `Verify runtime` 真正通过，才把 Full Harness 视为可用。这种账户/工作区权限限制不是 Router 安装失败。
+
+#### 5.1 在 managed launcher 的 MCP 页面创建 Tunnel
+
+保持 **Managed Start** 打开的 Codex Web GPT 窗口运行，进入它的 **MCP** 页面。
+
+MCP 页面会提供创建 Tunnel / API Key 的入口。优先从 launcher 给出的链接进入，因为 OpenAI 平台页面 URL 和按钮名称可能调整。
+
+创建 Tunnel 时：
+
+1. 使用**将要在 ChatGPT 中创建 `Codex Native2` connector 的同一个 OpenAI Platform organization，并确保该 Tunnel 关联到目标 ChatGPT workspace**。Platform organization 和 ChatGPT workspace 是两个不同的权限边界，仅仅“同一个邮箱”不一定足够。
+2. 创建/编辑 Tunnel 的操作者需要 OpenAI Platform 的 **Tunnels Read + Manage** 权限；如果看得到 Tunnel 但不能新建/编辑，先让 organization owner / RBAC 管理员授予相应权限。
+3. 创建一个新的 Secure MCP Tunnel，并在 Tunnel 的 association/可用范围中包含将要使用 `Codex Native2` 的 ChatGPT workspace。否则 ChatGPT 创建 App 时可能完全看不到该 Tunnel。
+4. 复制它的 Tunnel ID。
+5. Tunnel ID 外形应类似：
+
+```text
+tunnel_<32-hex-characters>
+```
+
+Tunnel ID 不是密码，但也没有必要公开发布。
+
+#### 5.2 创建给 Tunnel runtime 使用的 OpenAI API Key
+
+仍然使用同一 OpenAI 账户/组织，按 launcher MCP 页面提示创建一把普通 OpenAI API Key。
+
+这里的 Key 是给 tunnel-client 做授权，不是 Router 用来调用 GPT 模型的 Provider Key。创建 Key 本身不会把 ChatGPT Web 请求改成普通 OpenAI API 计费。
+
+运行本机 `tunnel-client`、以及在 ChatGPT 创建 App 时选择这个 Tunnel，需要 **Tunnels Read + Use**。这和上一步创建/编辑 Tunnel 所需的 **Read + Manage** 不是同一组权限。给 runtime API key / 对应执行身份只授予实际需要的 Read + Use；如果 OpenAI 后续改变权限名称，以 launcher MCP 页面和 OpenAI Secure MCP Tunnel 文档显示的最小权限为准，不要为了省事授予无关管理权限。
+
+**不要把这把 Key：**
+
+- 写进 `config/*.json`；
+- 放进 Git；
+- 粘贴到 issue；
+- 粘贴到聊天；
+- 直接写进 PowerShell 命令行参数。
+
+#### 5.3 用本发行版的安全脚本连接 Harness
+
+不要把 Key 写成环境变量永久保存。打开新的 PowerShell：
+
+```powershell
+cd "$env:LOCALAPPDATA\codex-router"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatgpt-web-full-harness-connect.ps1
+```
+
+脚本会依次提示：
+
+```text
+Paste Tunnel ID (tunnel_...)
+Paste runtime API key (Tunnels Read + Use)
+```
+
+第二个输入是 `SecureString`，输入时屏幕上不显示字符，这是正常的。
+
+脚本只在当前进程内临时设置：
+
+```text
+CODEX_CHATGPT_WEB_TUNNEL_ID
+CODEX_CHATGPT_WEB_RUNTIME_KEY
+```
+
+调用完成后会清除变量并清零 SecureString 的内存副本。它还会在操作前后校验真实 `~/.codex/config.toml`；如果 Full Harness setup 触碰真实 Router 路由，会恢复原文件并报错。
+
+成功时应看到 JSON，重点是：
+
+```text
+"ok": true
+"routeOwner": "router"
+```
+
+如果此时 17841 已经启动，通常也应该看到：
+
+```text
+"bridgeReachable": true
+"daemonOwner": "upstream"
+```
+
+#### 5.4 在 ChatGPT 中打开 Developer Mode
+
+打开 ChatGPT 网页版。不同账户/工作区的入口可能略有不同，当前常见路径是：
+
+```text
+Settings
+→ Apps
+→ Advanced Settings
+→ Developer Mode
+```
+
+Business / Enterprise / Edu 工作区通常需要管理员/Owner 先在 Workspace Settings 中允许 Developer Mode / 创建自定义 MCP App。当前 OpenAI 公共文档给出的常见路径包括 `Workspace Settings → Permissions & Roles → Connected Data`，以及 `Settings → Apps → Advanced Settings`；Business 管理员也可从 `Workspace Settings → Apps → Create` 进入。界面会随 OpenAI 更新而变化，以实际账户为准。个人账户若没有相应入口，Browser-only 仍然可以继续使用。
+
+#### 5.5 创建 connector，名字必须完全一致
+
+创建一个新的自定义 App / MCP connector：
+
+```text
+Name / 名称: Codex Native2
+Connection / Transport: Tunnel
+Tunnel: 选择刚才创建的 Tunnel
+Authentication: None / 无
+Permissions / Actions: Allow all actions / 允许所有操作
+```
+
+**名字必须准确写成：**
+
+```text
+Codex Native2
+```
+
+不要写成：
+
+```text
+CodexNative2
+Codex Native
+Codex Native 2
+My Codex Native2
+```
+
+因为 launcher 会按这个 connector 名称做运行时验证。
+
+如果界面有 **Scan Tools**，先扫描工具，确认能看到 Codex Native2 暴露的工具，再创建/保存 App。
+
+如果你只能授予 read/fetch，而工作区策略不允许 write/modify，那么查看类工具可能工作，但 `exec`、补丁或其他写入动作会被 ChatGPT/工作区策略拦截。这不是 Router 自动降级，也不要通过关闭安全策略绕过管理员限制。
+
+#### 5.6 Verify runtime
+
+回到 Managed Codex Web GPT → **MCP** 页面，点击：
+
+```text
+Verify runtime
+```
+
+成功标准：
+
+```text
+Tunnel connected
+Codex Native2 found
+runtime available
+```
+
+如果找不到 connector，优先检查：
+
+- 名称是不是精确 `Codex Native2`；
+- ChatGPT connector 是否选择了正确 Tunnel；
+- Authentication 是否为 None；
+- Tunnel 所属 Platform organization、runtime API key 权限，以及目标 ChatGPT workspace association 是否匹配；
+- ChatGPT Developer Mode 是否仍开启；
+- 工作区是否允许该 App；
+- `chatgpt-web-full-harness-connect.ps1` 是否成功返回 `routeOwner=router`。
+
+#### 5.7 Full Harness 验收
+
+重新打开 Codex，新建一个测试任务，选择 ChatGPT Web 模型。在一个不重要的测试目录里先做只读测试，例如：
+
+```text
+请使用工具列出当前目录文件，只报告文件名，不修改任何内容。
+```
+
+如果能看到真实 tool call 并返回目录内容，Full Harness 已接通。
+
+再根据需要做写入测试。不要一上来就在重要仓库做删除/覆盖操作。
+
+### 第 6 步：Codex Auto Resume（可选）
+
+入口：
+
+```text
+Control Center → Settings → Codex Auto Resume
+```
+
+推荐顺序：
+
+1. **Install sidecar**：安装固定审计 commit，不跟随上游 `main` 漂移。
+2. **Run doctor**：确认上游工具能读取当前 Codex 环境。
+3. **Dry-run scan**：只扫描，不实际续跑。
+4. 确认状态合理后再点 **Enable autostart**。
+5. 保持 **weekly reset-credit auto redeem = OFF**，除非你明确理解并主动选择消耗 weekly reset credit。
+
+本集成安装和启用 autostart 时都会再次强制：
+
+```text
+auto_redeem_weekly_reset = false
+```
+
+Auto Resume 只处理**原生 Codex quota 恢复后的原 thread 续跑**。它不会：
+
+- 自动切换 Router 模型；
+- 参与 xKiro / Command Code / ChatGPT Web failover；
+- 触发 compact；
+- 打开 Single / Team；
+- 替你选择其他 Provider。
+
+### 第 7 步：Single / Team（可选，项目级）
+
+发行版没有写死任何维护者电脑路径。想让 Control Center 的 Single / Team 对某个项目生效，该项目必须自己包含：
+
+```text
+<project>\.codex\config.single.toml
+<project>\.codex\config.team.toml
+```
+
+然后在启动 Control Center 前设置：
+
+```powershell
+$env:CODEX_ROUTER_AGENT_MODE_PROJECT_ROOT = "D:\你的项目"
+```
+
+再启动 Control Center。
+
+没有设置这个变量时，Single / Team 会显示 unavailable，而不是猜一个目录。这是故意的安全边界。
+
+### 第 8 步：重启 Windows 后应该发生什么
+
+正常的 Windows 登录启动链是：
+
+```text
+Codex Router service
+Codex Router Tray
+可选：VibcodingCodexAutoResume
+```
+
+ChatGPT Web launcher 自己的 `autoStart` 被强制关闭。**不要手工给 `Codex Web GPT.exe` 创建 Run/RunOnce/计划任务。**
+
+如果你已经完成 ChatGPT Web 配置，Codex Router Tray 登录后会先确认真实 Codex route 仍属于 Router，再恢复 managed ChatGPT Web / 17841。这样不会因为 Windows 开机顺序让 17841 抢走真实 Codex 路由。
+
+### 第 9 步：日常升级，不要直接覆盖
+
+普通用户更新本发行版：
+
+```powershell
+cd "$env:LOCALAPPDATA\codex-router"
+.\model-router.ps1 codex update
+```
+
+更新只跟随：
+
+```text
+https://github.com/destineylu/codex-router
+```
+
+原项目：
+
+```text
+https://github.com/duolahypercho/codex-router
+```
+
+保留为参考 upstream，不会自动 merge 到生产。
+
+维护者在升级前先运行：
+
+```powershell
+npm run upstream:status
+```
+
+它只检查：
+
+```text
+Router upstream 是否有新 commit
+ChatGPT Web 是否有新 release
+Auto Resume 是否有新 commit
+```
+
+不会自动 merge、安装或升级。
+
+升级后的静态发行验收：
+
+```powershell
+npm run release:verify
+```
+
+这会检查安装器、Control Center、ChatGPT Web pin/hash、Auto Resume pin、安全输入、README 关键步骤、个人路径泄漏和相关回归测试，不调用付费模型。
+
+### 第 10 步：最常见故障怎么判断
+
+| 现象 | 先检查什么 | 正确处理 |
+| --- | --- | --- |
+| `git` / `node` 找不到 | PATH 没刷新 | 关闭 PowerShell，重新打开，再查版本 |
+| Router 安装完成但 Control Center 没出现 | Tray 构建/注册失败 | PowerShell 执行 `cd "$env:LOCALAPPDATA\codex-router"`，再运行 `.\codex-router.ps1 tray install` |
+| API Key 保存了仍 401/403 | Provider 套餐/模型 entitlement | 去 Provider 官网确认套餐，不要重装 Router |
+| ChatGPT Web `Managed Start` 按钮不可用 | `Codex route owner` 不是 Router | 先 `doctor`/repair Router，禁止直连 17841 |
+| Managed browser 打开但一直 `Sign in required` | 只在普通 Chrome 登录了 | 必须在 Managed Start 打开的 Codex Web GPT 窗口内登录 |
+| `Start 17841` 不可点 | Browser smoke 未通过 | 回 managed launcher 完成 Browser smoke test |
+| 17841 不可达 | launcher/daemon 未正常启动、代理问题 | Stop managed → Managed Start → smoke → Start 17841 |
+| ChatGPT Web 能回答但 Codex picker 没模型 | Provider 未启用 / 没 Add models / Codex 没重启 | Models → Enable ChatGPT Web → Fetch model list → Add → 重启 Codex |
+| ChatGPT Web 能回答但不会用工具 | 仍是 Browser-only | 完成 Tunnel + `Codex Native2` + Verify runtime |
+| `Verify runtime` 找不到 connector | 名称/隧道/权限/association 错误 | 名称必须精确 `Codex Native2`；检查 Tunnel 是否关联目标 ChatGPT workspace、运行身份是否有 Read+Use、Auth 是否为 None |
+| ChatGPT 没有 Developer Mode / Create App/Tunnel | 账户或工作区未开放 | 不能靠 Router 绕过；使用 Browser-only 或换有权限的工作区 |
+| `routeOwner = chatgpt-web` / `Conflict` | 真实 Codex 被改成 17841 | 停止 ChatGPT Web，修复 Router；不要继续发布模型 |
+| Windows 重启后 ChatGPT Web 没恢复 | Router Tray 没运行 | 检查 Codex Router Tray 登录任务；不要给 launcher 单独加自启动 |
+| Auto Resume 想自动消耗 weekly reset | 默认故意关闭 | 只有明确需要时在 Settings 手动 Enable reset-credit |
+| 模型失败后自动换成另一个 | 不应发生在默认配置 | `failover` 默认关闭；检查是否有人显式打开并配置了 chain |
+
+如果使用 Clash、代理软件或公司代理：ChatGPT Web managed launcher只接受安全的 loopback 本机代理继承，例如 `127.0.0.1:<port>`；不会为了“能连上”接受任意远端 proxy。没有代理时无需配置。
+
+### 第 11 步：最终成功清单
+
+一个完整 Windows 复刻至少应做到：
+
+```text
+[ ] Router service running
+[ ] doctor 没有关键失败
+[ ] Control Center 能打开
+[ ] Codex route owner = Router
+[ ] 普通 API Provider（如有）已连接并能看到模型
+[ ] ChatGPT Web launcher = Installed（如使用）
+[ ] Browser host = Smoke passed（如使用）
+[ ] Bridge 17841 = Reachable（如使用）
+[ ] Verify isolation = PASS（如使用）
+[ ] ChatGPT Web Provider 已 Enabled（如使用）
+[ ] Fetch model list 能看到本账户模型（如使用）
+[ ] 模型已 Add，并在重启 Codex 后进入 picker
+[ ] Browser-only 基础聊天通过
+[ ] Full Harness 用户：Tunnel 已连接
+[ ] Full Harness 用户：ChatGPT 中存在精确名称 Codex Native2
+[ ] Full Harness 用户：Verify runtime 通过
+[ ] Full Harness 用户：Codex 只读工具测试通过
+[ ] Auto Resume 用户：doctor + dry-run 通过
+[ ] weekly reset-credit auto redeem = false（除非用户主动开启）
+[ ] failover 默认关闭，未发生盲目自动换模型
+```
+
+### 第 12 步：哪些东西绝对不要复制给别人
+
+可复刻的是**代码和流程**，不是维护者的账户状态。下面内容必须每个用户自己创建：
+
+```text
+Provider API Keys
+OpenAI Tunnel runtime API key
+ChatGPT 登录 Cookie / browser profile
+Tunnel ID
+OAuth token
+Codex 登录状态
+xKiro / xKiro2 账户凭据
+ComfyUI remote 地址
+Tailscale IP
+项目路径
+```
+
+本仓库不应该、也不会通过 Git 分发这些内容。
+
+### 第 13 步：macOS / Linux 用户
+
+Router 本体可以按后面的 POSIX 安装命令使用。当前 Destiney v1 的 ChatGPT Web guarded installer 和 Control Center 集成重点验收的是 Windows x64；macOS/Linux 用户如果只需要 Router / API Provider，可以正常使用。如果需要 ChatGPT Web，请先查看 upstream `miuuyy/codex-chatgpt-web` 对当前平台的安装支持，再确认本发行版尚未把 Windows 专用隔离逻辑错误套到其他平台。
+
+### 第 14 步：维护者发布前检查
+
+每次准备更新 `destineylu/main` 时至少运行：
+
+```powershell
+npm run upstream:status
+npm run release:verify
+```
+
+对于 ChatGPT Web、Router protocol、4202/4203、Responses payload、Tool metadata、Tunnel/Full Harness 发生变化的版本，还必须做真实 live Gate；只改 README、UI 文案或无关 Provider 时，不需要浪费 ChatGPT/Codex 额度重复三模型全量 Gate。
+
+如果你是第一次安装，到这里已经包含完整流程。下面继续保留英文 quick reference 和各 Provider 的高级说明。
+
+## Quick installer reference (English)
 
 This is the default setup: **guided provider setup + Electron Control Center +
 tray/menu-bar app + macOS desktop widget**.
