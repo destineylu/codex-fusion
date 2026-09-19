@@ -172,7 +172,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     show: false,
-    title: "Codex Router",
+    title: "Codex Fusion",
     icon: appIconPath(),
     // macOS keeps native traffic lights. Windows/Linux are frameless with
     // no overlay so the renderer can place left-side lights like macOS.
@@ -312,11 +312,11 @@ function createTray() {
   if (image.isEmpty()) throw new Error(`The tray icon could not be loaded from ${appIconPath()}.`);
   const createdTray = new Tray(image);
   try {
-    createdTray.setToolTip("Codex Router");
+    createdTray.setToolTip("Codex Fusion");
     createdTray.setContextMenu(Menu.buildFromTemplate([
       { label: "Open Control Center", click: showWindow },
       { type: "separator" },
-      { label: "Quit Codex Router", click: () => app.quit() },
+      { label: "Quit Codex Fusion", click: () => app.quit() },
     ]));
     createdTray.on("click", showWindow);
   } catch (error) {

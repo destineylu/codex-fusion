@@ -1,18 +1,21 @@
-# Destiney Codex Router — Reproducible v1
+# Codex Fusion — Reproducible v1
 
 This document defines the install and upgrade contract for the enhanced
-`destineylu/codex-router` distribution.
+`destineylu/codex-fusion` distribution. **Codex Fusion** is the product/distribution name; **Codex Router** remains the internal routing core and keeps its established v1 compatibility identifiers.
 
 The goal is not to freeze upstream forever. The goal is to keep production on a
 known-good distribution while making upstream adoption deliberate, reviewable,
-and reversible.
+and reversible. Upstream authorship is preserved: Codex Fusion is an integration
+distribution, not a claim of original authorship over Codex Router,
+`codex-chatgpt-web`, `codex-auto-resume`, or the other projects acknowledged in
+[`NOTICE.md`](../NOTICE.md).
 
 ## 1. Source ownership
 
 End-user installs use:
 
 ```text
-origin   https://github.com/destineylu/codex-router.git
+origin   https://github.com/destineylu/codex-fusion.git
 branch   main
 ```
 
@@ -35,8 +38,13 @@ CODEX_ROUTER_UPDATE_BRANCH
 ```
 
 Running the Destiney installer over a recognized upstream checkout migrates
-`origin` to the Destiney distribution and preserves the original repository
-as `upstream`.
+`origin` to the Codex Fusion distribution and preserves the original Router repository
+as `upstream`. Existing checkouts that still carry the former `destineylu/codex-router`
+remote are recognized as a legacy Destiney distribution name and may migrate safely.
+
+The GitHub rename does **not** rename v1 runtime plumbing. Existing install directories,
+script names, provider IDs, service/task names, and sidecar paths containing
+`codex-router` remain valid by design.
 
 ## 2. What v1 reproduces
 
@@ -97,14 +105,14 @@ firewall policy. Those are installation-specific settings.
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -WithTray
 ```
 
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/destineylu/codex-router/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.sh \
   | sh -s -- --target codex --guided --with-tray
 ```
 
@@ -164,7 +172,7 @@ It does not merge, install or update anything.
 5. Run repository tests, Control Center checks, and targeted live gates
    proportional to the surfaces changed.
 6. Merge the reviewed result into the Destiney release branch.
-7. Publish to `destineylu/codex-router main` only after acceptance.
+7. Publish to `destineylu/codex-fusion main` only after acceptance.
 8. Existing user installations then receive the reviewed build through their
    normal fast-forward update.
 

@@ -1,8 +1,8 @@
-# Codex Router
+# Codex Fusion Control Center
 
-The control center is an Electron interface over the existing Codex Router
-control plane. It does not duplicate router state, provider
-credentials, or service logic in the renderer.
+The Control Center is the desktop interface for **Codex Fusion**. It sits over the existing **Codex Router** control plane and adds the user-facing management surface for models, usage, ChatGPT Web, Auto Resume, and related integrations. It does not duplicate router state, provider credentials, or service logic in the renderer.
+
+For v1 upgrade compatibility, the packaged executable/bundle, app identifiers, install directories, and service-facing paths may still contain the established `Codex Router` / `codex-router` names. Those are compatibility identifiers, not the product brand.
 
 ## Sections
 
@@ -62,7 +62,7 @@ Login-free mode is also terminal-only in this beta. Its catalog and Codex
 transport change must become one rollback-safe backend transaction before the
 desktop app exposes it as a one-click mutation.
 
-Install the Control Center and router from the same beta build. The app keeps
+Install the Codex Fusion Control Center and Router core from the same beta build. The app keeps
 read-only status and documentation available when it detects version skew, but
 refuses router mutations until the installed checkout exposes the matching
 control protocol. This prevents a newer UI from sending changed command

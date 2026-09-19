@@ -37,6 +37,10 @@ function requireManagedCheckout() {
   const configured = process.env.CODEX_ROUTER_REPOSITORY_URL;
   const allowed = new Set([
     configured,
+    "https://github.com/destineylu/codex-fusion",
+    "https://github.com/destineylu/codex-fusion.git",
+    "git@github.com:destineylu/codex-fusion.git",
+    // Legacy Destiney repository name remains recognized after the GitHub rename.
     "https://github.com/destineylu/codex-router",
     "https://github.com/destineylu/codex-router.git",
     "git@github.com:destineylu/codex-router.git",

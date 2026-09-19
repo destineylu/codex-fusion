@@ -1,7 +1,7 @@
 # Provider logo sources
 
 These local assets identify third-party providers and model makers inside the
-Codex Router control center. They are bundled with the app and are never
+Codex Fusion Control Center. They are bundled with the app and are never
 hotlinked at runtime. Research was refreshed on 2026-08-21.
 
 | Local asset | Used for | Official brand or product page | Asset source |

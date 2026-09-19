@@ -3,7 +3,7 @@
   "version": "0.5.1",
   "private": true,
   "type": "module",
-  "description": "Extensible local model router for Codex and Cursor",
+  "description": "Codex Fusion workspace with the Codex Router multi-provider core",
   "engines": {
     "node": ">=22.19.0"
   },

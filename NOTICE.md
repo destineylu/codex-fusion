@@ -1,4 +1,16 @@
-# Attribution
+# Codex Fusion — Attribution and Thanks
+
+Codex Fusion is an independent integration and enhanced distribution built by combining and adapting excellent open-source projects. We are grateful to the original authors and contributors whose work made this project possible. Codex Fusion's contribution is the reviewed integration layer, compatibility safeguards, Control Center workflow, reproducible installation/upgrade contract, and additional local extensions; it does **not** replace or obscure the authorship of the upstream projects.
+
+## Core upstream projects
+
+- **Codex Router** — [duolahypercho/codex-router](https://github.com/duolahypercho/codex-router). This is the routing foundation and remains the reference upstream for the Codex Router core used inside Codex Fusion. Thank you to **duolahypercho** and all Codex Router contributors for building and maintaining the multi-provider routing foundation.
+- **codex-chatgpt-web** — [miuuyy/codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web). Codex Fusion's guarded ChatGPT Web Bridge installs and manages an audited upstream revision rather than presenting that launcher/runtime as original Fusion code. Thank you to **miuuyy** and its contributors for making the ChatGPT Web integration possible.
+- **codex-auto-resume** — [feifeigong/codex-auto-resume](https://github.com/feifeigong/codex-auto-resume). Codex Fusion integrates a pinned, audited revision through Control Center while keeping its behavior isolated from model routing. Thank you to **feifeigong** and contributors for the quota-resume workflow.
+
+Each upstream component retains its own repository history, license, copyright notices, and project identity. When Codex Fusion installs an optional upstream sidecar, the upstream project remains the source of that component; Fusion adds lifecycle management and safety/compatibility gates around it.
+
+## Additional attribution and prior art
 
 This project uses the merged-model-catalog and built-in-provider routing
 pattern demonstrated by [opencodex](https://github.com/lidge-jun/opencodex).

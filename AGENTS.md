@@ -1,4 +1,6 @@
-# Model Router installation instructions
+# Codex Fusion / Model Router installation instructions
+
+**Naming contract:** this repository is published as **Codex Fusion** at `destineylu/codex-fusion`. The routing core and v1 compatibility identifiers remain **Codex Router** / `codex-router`; do not rename existing install directories, scripts, provider IDs, services, scheduled tasks, or sidecar paths merely to match the product brand.
 
 ## Repository maintenance workflow
 

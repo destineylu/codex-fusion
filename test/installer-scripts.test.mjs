@@ -624,18 +624,20 @@ test("release defaults contain no maintainer-specific project path", () => {
   assert.match(ipc, /CODEX_ROUTER_AGENT_MODE_PROJECT_ROOT/);
 });
 
-test("the enhanced distribution installs from destineylu and preserves the original router as reference upstream", () => {
+test("Codex Fusion installs from destineylu, recognizes the legacy Destiney name, and preserves Router upstream", () => {
   const posix = readScript("install.sh");
   const windows = readScript("install.ps1");
   const updater = readScript("src", "update.mjs");
 
   for (const source of [posix, windows]) {
-    assert.match(source, /https:\/\/github\.com\/destineylu\/codex-router\.git/);
+    assert.match(source, /https:\/\/github\.com\/destineylu\/codex-fusion\.git/);
+    assert.match(source, /destineylu\/codex-router/);
     assert.match(source, /https:\/\/github\.com\/duolahypercho\/codex-router\.git/);
     assert.match(source, /CODEX_ROUTER_UPDATE_BRANCH/);
   }
   assert.match(posix, /remote add upstream/);
   assert.match(windows, /remote add upstream/);
+  assert.match(updater, /destineylu\/codex-fusion/);
   assert.match(updater, /destineylu\/codex-router/);
   assert.match(updater, /CODEX_ROUTER_UPDATE_BRANCH/);
 });

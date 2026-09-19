@@ -14,5 +14,5 @@ test("reproducible v1 release invariants pass", () => {
     shell: false,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /14\/14 reproducibility checks passed\./);
+  assert.match(result.stdout, /15\/15 reproducibility checks passed\./);
 });

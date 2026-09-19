@@ -258,7 +258,7 @@ export default function App() {
         accountUsage: true,
         providerUsage: true,
       });
-      setLoadError("The Electron bridge is unavailable. Open this UI through the Codex Router desktop app.");
+      setLoadError("The Electron bridge is unavailable. Open this UI through the Codex Fusion desktop Control Center.");
       return;
     }
     setRefreshing(true);
@@ -443,7 +443,7 @@ export default function App() {
 
   return (
     <div className={classNames("app-shell", nativeTitlebar && "native-titlebar", api && `native-titlebar-${api.platform}`, !sidebarOpen && "sidebar-collapsed")}>
-      <aside className="app-sidebar" aria-label="Codex Router sidebar" inert={sidebarSearchOpen ? true : undefined}>
+      <aside className="app-sidebar" aria-label="Codex Fusion sidebar" inert={sidebarSearchOpen ? true : undefined}>
         <header className="sidebar-window-row">
           {api && api.platform !== "darwin" && sidebarOpen ? (
             <div className="traffic-lights">
@@ -457,7 +457,7 @@ export default function App() {
           <button className="sidebar-toggle" type="button" aria-label="Go forward" disabled={historyIndex >= viewHistory.length - 1} onClick={() => moveHistory(1)}><ArrowRight aria-hidden size={15} strokeWidth={1.7} /></button>
         </header>
         <div className="router-wordmark">
-          <strong>Codex Router</strong>
+          <strong>Codex Fusion</strong>
           <button ref={searchTriggerRef} className="sidebar-search-toggle" type="button" aria-label="Search control center" aria-haspopup="dialog" aria-expanded={sidebarSearchOpen} onClick={() => setSidebarSearchOpen(true)}><Search aria-hidden size={15} strokeWidth={1.7} /></button>
         </div>
         <nav className="primary-nav" aria-label="Control center sections">

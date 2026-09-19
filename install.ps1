@@ -58,7 +58,7 @@ if ($NoDiscovery -and -not $NoProvider) {
   throw "-NoDiscovery requires -NoProvider."
 }
 $PreviousRevision = $null
-$DistributionRepositoryUrl = "https://github.com/destineylu/codex-router.git"
+$DistributionRepositoryUrl = "https://github.com/destineylu/codex-fusion.git"
 $ReferenceUpstreamRepositoryUrl = "https://github.com/duolahypercho/codex-router.git"
 $RepositoryUrl = if ($env:CODEX_ROUTER_REPOSITORY_URL) {
   $env:CODEX_ROUTER_REPOSITORY_URL
@@ -157,6 +157,9 @@ if (-not $CheckoutInstall) {
       $AllowedOrigins = @(
         $RepositoryUrl,
         $DistributionRepositoryUrl,
+        "https://github.com/destineylu/codex-fusion",
+        "git@github.com:destineylu/codex-fusion.git",
+        # Legacy public name retained so existing v1 checkouts survive the GitHub rename.
         "https://github.com/destineylu/codex-router",
         "git@github.com:destineylu/codex-router.git",
         $ReferenceUpstreamRepositoryUrl,

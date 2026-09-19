@@ -1,4 +1,7 @@
 appId: io.github.codex-router.control-center
+# v1 compatibility: keep the packaged executable/bundle name stable even though the
+# user-facing product brand is Codex Fusion. Installers, scheduled tasks, and
+# existing upgrades still resolve Codex Router.exe / Codex Router.app.
 productName: Codex Router
 directories:
   output: release

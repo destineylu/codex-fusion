@@ -9,7 +9,7 @@ import {
   CODEX_CHATGPT_WEB_REPOSITORY,
 } from "../apps/control-center/electron/codex-chatgpt-web.mjs";
 
-const DISTRIBUTION_REPOSITORY = "https://github.com/destineylu/codex-router.git";
+const DISTRIBUTION_REPOSITORY = "https://github.com/destineylu/codex-fusion.git";
 const ROUTER_UPSTREAM_REPOSITORY = "https://github.com/duolahypercho/codex-router.git";
 const args = new Set(process.argv.slice(2));
 const json = args.has("--json");
@@ -30,7 +30,7 @@ async function githubJson(url) {
   const response = await fetch(url, {
     headers: {
       accept: "application/vnd.github+json",
-      "user-agent": "destineylu-codex-router-upstream-status",
+      "user-agent": "destineylu-codex-fusion-upstream-status",
     },
     signal: AbortSignal.timeout(15_000),
   });
@@ -53,7 +53,7 @@ async function probe(label, fn) {
 const origin = git(["remote", "get-url", "origin"]);
 const upstream = git(["remote", "get-url", "upstream"]);
 const destiney = git(["remote", "get-url", "destiney"]);
-const isDistribution = (value) => /github\.com[/:]destineylu\/codex-router(?:\.git)?$/i.test(String(value || ""));
+const isDistribution = (value) => /github\.com[/:]destineylu\/(?:codex-fusion|codex-router)(?:\.git)?$/i.test(String(value || ""));
 const isReference = (value) => /github\.com[/:]duolahypercho\/codex-router(?:\.git)?$/i.test(String(value || ""));
 const local = {
   head: git(["rev-parse", "HEAD"]),

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-distribution_repository_url=https://github.com/destineylu/codex-router.git
+distribution_repository_url=https://github.com/destineylu/codex-fusion.git
 reference_upstream_url=https://github.com/duolahypercho/codex-router.git
 repository_url=${CODEX_ROUTER_REPOSITORY_URL:-$distribution_repository_url}
 update_branch=${CODEX_ROUTER_UPDATE_BRANCH:-main}
@@ -252,7 +252,7 @@ if [ -z "$repo_dir" ]; then
   if [ -d "$install_dir/.git" ]; then
     origin_url=$(git -C "$install_dir" remote get-url origin 2>/dev/null || true)
     case "$origin_url" in
-      "$repository_url"|https://github.com/destineylu/codex-router|https://github.com/destineylu/codex-router.git|git@github.com:destineylu/codex-router.git|https://github.com/duolahypercho/codex-router|https://github.com/duolahypercho/codex-router.git|git@github.com:duolahypercho/codex-router.git)
+      "$repository_url"|https://github.com/destineylu/codex-fusion|https://github.com/destineylu/codex-fusion.git|git@github.com:destineylu/codex-fusion.git|https://github.com/destineylu/codex-router|https://github.com/destineylu/codex-router.git|git@github.com:destineylu/codex-router.git|https://github.com/duolahypercho/codex-router|https://github.com/duolahypercho/codex-router.git|git@github.com:duolahypercho/codex-router.git)
         ;;
       *)
         die "$install_dir already contains a different Git repository"

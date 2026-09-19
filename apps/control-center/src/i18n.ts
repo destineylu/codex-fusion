@@ -120,7 +120,7 @@ const EN = {
 
   "settings.desktop.title": "Desktop surfaces",
   "settings.desktop.description": "The existing tray keeps its notch and desktop activity views.",
-  "settings.desktop.tray.title": "Codex Router tray",
+  "settings.desktop.tray.title": "Codex Fusion tray",
   "settings.desktop.tray.detail": "Usage, live requests, provider controls, notch overlay, and desktop widget remain installed as one companion.",
   "settings.desktop.enable": "Enable tray",
   "settings.desktop.restart": "Restart tray",
@@ -264,7 +264,7 @@ const ZH: Overlay = {
 
   "settings.desktop.title": "桌面组件",
   "settings.desktop.description": "现有托盘将保留刘海视图与桌面活动视图。",
-  "settings.desktop.tray.title": "Codex Router 托盘",
+  "settings.desktop.tray.title": "Codex Fusion 托盘",
   "settings.desktop.tray.detail": "用量、实时请求、服务商控制、刘海浮层与桌面小组件将作为一个整体保留。",
   "settings.desktop.enable": "启用托盘",
   "settings.desktop.restart": "重启托盘",
@@ -404,7 +404,7 @@ const AR: Overlay = {
 
   "settings.desktop.title": "واجهات سطح المكتب",
   "settings.desktop.description": "تحتفظ أيقونة الشريط الحالية بعرض النوتش وعرض النشاط على سطح المكتب.",
-  "settings.desktop.tray.title": "شريط Codex Router",
+  "settings.desktop.tray.title": "شريط Codex Fusion",
   "settings.desktop.tray.detail": "يبقى الاستخدام والطلبات الحية وعناصر التحكم بالمزوّدين وطبقة النوتش وأداة سطح المكتب مثبّتة كرفيق واحد.",
   "settings.desktop.enable": "تفعيل الشريط",
   "settings.desktop.restart": "إعادة تشغيل الشريط",
@@ -540,7 +540,7 @@ const HI: Overlay = {
 
   "settings.desktop.title": "डेस्कटॉप सरफ़ेस",
   "settings.desktop.description": "मौजूदा ट्रे अपने नॉच और डेस्कटॉप गतिविधि दृश्य बनाए रखती है।",
-  "settings.desktop.tray.title": "Codex Router ट्रे",
+  "settings.desktop.tray.title": "Codex Fusion ट्रे",
   "settings.desktop.tray.detail": "उपयोग, लाइव अनुरोध, प्रदाता नियंत्रण, नॉच ओवरले और डेस्कटॉप विजेट एक साथी के रूप में स्थापित रहते हैं।",
   "settings.desktop.enable": "ट्रे सक्षम करें",
   "settings.desktop.restart": "ट्रे पुनरारंभ करें",
@@ -676,7 +676,7 @@ const JA: Overlay = {
 
   "settings.desktop.title": "デスクトップ表示",
   "settings.desktop.description": "既存のトレイはノッチ表示とデスクトップのアクティビティ表示を維持します。",
-  "settings.desktop.tray.title": "Codex Router トレイ",
+  "settings.desktop.tray.title": "Codex Fusion トレイ",
   "settings.desktop.tray.detail": "使用状況、実行中リクエスト、プロバイダー操作、ノッチオーバーレイ、デスクトップウィジェットは一体のコンパニオンとして残ります。",
   "settings.desktop.enable": "トレイを有効化",
   "settings.desktop.restart": "トレイを再起動",
@@ -812,7 +812,7 @@ const KO: Overlay = {
 
   "settings.desktop.title": "데스크톱 표면",
   "settings.desktop.description": "기존 트레이는 노치 뷰와 데스크톱 활동 뷰를 그대로 유지합니다.",
-  "settings.desktop.tray.title": "Codex Router 트레이",
+  "settings.desktop.tray.title": "Codex Fusion 트레이",
   "settings.desktop.tray.detail": "사용량, 실시간 요청, 공급자 제어, 노치 오버레이, 데스크톱 위젯이 하나의 동반 앱으로 유지됩니다.",
   "settings.desktop.enable": "트레이 켜기",
   "settings.desktop.restart": "트레이 재시작",

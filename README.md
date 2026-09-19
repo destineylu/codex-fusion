@@ -1,6 +1,8 @@
-# Codex Router — Destiney Reproducible v1
+# Codex Fusion — Destiney Reproducible v1
 
-This repository is the **destineylu enhanced distribution** of Codex Router. End-user installs and self-updates follow `destineylu/codex-router`, while the original `duolahypercho/codex-router` repository remains configured as a reference upstream for reviewed upgrades. ChatGPT Web and Codex Auto Resume are likewise pinned to audited upstream revisions instead of auto-updating behind the operator's back. See [`docs/REPRODUCIBLE-V1.md`](docs/REPRODUCIBLE-V1.md) for the distribution and upgrade contract.
+**Codex Fusion** is the `destineylu/codex-fusion` enhanced Codex workspace: it combines the Codex Router core with Control Center, ChatGPT Web Bridge, Codex Native2 Full Harness, Auto Resume, and project-scoped Single / Team integration. End-user installs and self-updates follow `destineylu/codex-fusion`, while the original `duolahypercho/codex-router` repository remains configured as the reference upstream for reviewed Router upgrades. ChatGPT Web and Codex Auto Resume are likewise pinned to audited upstream revisions instead of auto-updating behind the operator's back. See [`docs/REPRODUCIBLE-V1.md`](docs/REPRODUCIBLE-V1.md) for the distribution and upgrade contract.
+
+For v1 compatibility, the routing engine is still named **Codex Router** internally. Existing paths, scripts, provider IDs, services, scheduled tasks, and sidecar directories such as `%LOCALAPPDATA%\codex-router`, `codex-router.ps1`, `model-router.ps1`, and `codex-router-sidecars` intentionally keep their established names. The product brand changed; the proven runtime plumbing did not.
 
 ## 中文：从零开始，照着做即可完成安装
 
@@ -8,13 +10,24 @@ This repository is the **destineylu enhanced distribution** of Codex Router. End
 
 | 组件 | 作用 | 是否必须 |
 | --- | --- | --- |
-| Codex Router | 让 Codex 使用 DeepSeek、Claude、GLM、Kimi、xKiro、Command Code、OpenRouter 等外部模型 | 必须 |
+| Codex Router（核心模块） | 让 Codex 使用 DeepSeek、Claude、GLM、Kimi、xKiro、Command Code、OpenRouter 等外部模型 | 必须 |
 | Control Center | 图形化管理 Provider、模型、Usage、Settings、ChatGPT Web、Auto Resume | Windows 推荐安装 |
 | ChatGPT Web Bridge | 把你自己的 ChatGPT Web 账户作为 Codex 模型使用，不走普通模型 API | 可选 |
 | Codex Native2 Full Harness | 让 ChatGPT Web 模型继续使用当前 Codex 的本地工具、命令、补丁等能力 | 可选，高级 |
 | Codex Auto Resume | 原生 Codex 因额度用尽停止后，在额度恢复时继续原 thread | 可选 |
 | Single / Team | 对指定项目切换 Codex Native Multi-Agent 能力 | 可选，项目级 |
 | ComfyUI Port | Codex 的 ComfyUI 工作流/面板集成 | 可选，独立仓库，不随 Router 自动安装 |
+
+### 感谢原作者与上游项目
+
+Codex Fusion 不是把多个开源项目重新包装后声称为自己的原创。它建立在多个优秀上游项目之上，并把它们通过审核、隔离、兼容层和统一 Control Center 组合成一套可复刻的 Codex 工作环境。特别感谢：
+
+- **Codex Router**：<https://github.com/duolahypercho/codex-router>，提供整个多 Provider / 多模型路由核心；
+- **codex-chatgpt-web**：<https://github.com/miuuyy/codex-chatgpt-web>，提供 ChatGPT Web launcher/runtime，Codex Fusion 在其外层增加固定版本审计、隔离和生命周期管理；
+- **codex-auto-resume**：<https://github.com/feifeigong/codex-auto-resume>，提供 Codex 原 thread 在额度恢复后的续跑能力，Codex Fusion 负责以独立 sidecar 方式接入 Control Center；
+- 以及 `opencodex`、`devin-2api`、Primer Octicons 等项目和贡献者提供的实现思路、协议研究或资源。
+
+每个上游项目仍保留自己的作者、仓库历史和许可证。更完整的来源与归属见 [`NOTICE.md`](NOTICE.md)。感谢所有原作者和贡献者让这些能力成为可能。
 
 ### 先选你的使用方式
 
@@ -65,7 +78,7 @@ Python >= 3.10
 
 如果 `python` 命令不存在但你已经安装 `uv`，也可以继续；如果 Node 或 Git 不存在，不要继续安装 Router。
 
-### 第 1 步：安装 Router + Control Center
+### 第 1 步：安装 Codex Fusion（Router + Control Center）
 
 #### 路线 A：准备使用普通 API Provider
 
@@ -73,14 +86,14 @@ Python >= 3.10
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -WithTray
 ```
 
 安装器会依次完成：
 
 ```text
-下载 destineylu/codex-router
+下载 destineylu/codex-fusion
 → 安装 Node / Python 依赖
 → 选择 Provider
 → 选择要显示的模型
@@ -102,7 +115,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -NoProvider -WithTray
 ```
 
@@ -582,10 +595,10 @@ cd "$env:LOCALAPPDATA\codex-router"
 .\model-router.ps1 codex update
 ```
 
-更新只跟随：
+更新只跟随 Codex Fusion 发行仓库：
 
 ```text
-https://github.com/destineylu/codex-router
+https://github.com/destineylu/codex-fusion
 ```
 
 原项目：
@@ -715,7 +728,7 @@ tray/menu-bar app + macOS desktop widget**.
 Copy and paste this into Terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/destineylu/codex-router/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.sh \
   | sh -s -- --target codex --guided --with-tray
 ```
 
@@ -725,18 +738,18 @@ Copy and paste this into PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -WithTray
 ```
 
-That is the complete installation. It asks which providers you want and keeps
+That is the complete Codex Fusion installation. It asks which providers you want and keeps
 credential entry in private local prompts.
 
 When it finishes:
 
 1. Fully quit and reopen Codex.
 2. Start a new task and choose a routed model.
-3. Open **Codex Router** to use the Control Center.
+3. Open the installed Control Center. Its v1 compatibility package may still appear as **Codex Router** in the operating system, while the window and product branding are **Codex Fusion**.
 
 On Windows, the enhanced Control Center also exposes guarded optional installers for **ChatGPT Web Bridge** and **Codex Auto Resume** under Settings. Those components install their own audited upstream revisions; user-specific ChatGPT login/Connector state and provider credentials are configured locally and are never bundled in this repository.
 
@@ -752,25 +765,19 @@ macOS does not have a public `.dmg` yet; the command above builds and installs
 the app locally. If it asks for the Xcode Command Line Tools, run
 `xcode-select --install` and repeat the command.
 
-## What Codex Router does
+## What Codex Fusion does
 
-Use Anthropic, Kimi, DeepSeek, xAI, GitHub Copilot, and other external models
-inside the Codex App and CLI. One local installation can also serve
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and
-[Gemini CLI](https://github.com/google-gemini/gemini-cli). Your provider
-credentials stay on your computer.
+Codex Fusion keeps Codex as the working environment while combining the **Codex Router** model-routing core, Control Center, guarded ChatGPT Web integration, optional Full Harness tooling, Auto Resume, and project-scoped Multi-Agent controls. The Router core can use Anthropic, Kimi, DeepSeek, xAI, GitHub Copilot, and other external models inside the Codex App and CLI; one local routing installation can also serve [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and [Gemini CLI](https://github.com/google-gemini/gemini-cli). Provider credentials and personal application sessions stay on the user's computer.
 
-Codex Router is an independent community project. It is not affiliated with or
-endorsed by OpenAI, GitHub, Anthropic, Moonshot AI, DeepSeek, OpenRouter,
-opencode, Google, or the referenced opencodex project.
+Codex Fusion is an independent community distribution. Its Codex Router core and the referenced upstream components are not affiliated with or endorsed by OpenAI, GitHub, Anthropic, Moonshot AI, DeepSeek, OpenRouter, opencode, Google, or the referenced opencodex project.
 
 ## Give the link to your agent
 
 Paste this into a Codex task:
 
 ```text
-Install the router from this public repository:
-https://github.com/destineylu/codex-router
+Install Codex Fusion from this public repository:
+https://github.com/destineylu/codex-fusion
 
 Follow AGENTS.md. Preserve my existing Codex models, profiles, settings, and
 ChatGPT login. Use only the provider authentication I choose, safely migrate
@@ -869,7 +876,7 @@ Homebrew above; a future npm package should use the scoped name
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/destineylu/codex-router/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.sh \
   | sh -s -- --target codex --guided
 ```
 
@@ -877,7 +884,7 @@ Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided
 ```
 

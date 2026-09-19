@@ -24,12 +24,13 @@ const provider = JSON.parse(read("config/chatgpt-web/chatgpt-web.json"));
 const harnessPs1 = read("scripts/chatgpt-web-full-harness-connect.ps1");
 const harnessMjs = read("scripts/chatgpt-web-full-harness-connect.mjs");
 const reproducibleDoc = read("docs/REPRODUCIBLE-V1.md");
+const notice = read("NOTICE.md");
 
 check(
-  "README installs from destineylu/main",
+  "README installs from destineylu/codex-fusion main",
   includesAll(readme, [
-    "raw.githubusercontent.com/destineylu/codex-router/main/install.ps1",
-    "raw.githubusercontent.com/destineylu/codex-router/main/install.sh",
+    "raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1",
+    "raw.githubusercontent.com/destineylu/codex-fusion/main/install.sh",
   ]),
 );
 check(
@@ -55,24 +56,27 @@ check(
   ]),
 );
 check(
-  "Windows installer defaults to distribution + reference upstream",
+  "Windows installer defaults to Codex Fusion distribution + Router reference upstream",
   includesAll(installPs1, [
-    "https://github.com/destineylu/codex-router.git",
+    "https://github.com/destineylu/codex-fusion.git",
+    "https://github.com/destineylu/codex-router",
     "https://github.com/duolahypercho/codex-router.git",
     "CODEX_ROUTER_UPDATE_BRANCH",
   ]),
 );
 check(
-  "POSIX installer defaults to distribution + reference upstream",
+  "POSIX installer defaults to Codex Fusion distribution + Router reference upstream",
   includesAll(installSh, [
-    "https://github.com/destineylu/codex-router.git",
+    "https://github.com/destineylu/codex-fusion.git",
+    "https://github.com/destineylu/codex-router",
     "https://github.com/duolahypercho/codex-router.git",
     "CODEX_ROUTER_UPDATE_BRANCH",
   ]),
 );
 check(
-  "self-updater recognizes distribution branch override",
+  "self-updater recognizes Codex Fusion and legacy Destiney repository names",
   includesAll(updater, [
+    "destineylu/codex-fusion",
     "destineylu/codex-router",
     "CODEX_ROUTER_UPDATE_BRANCH",
   ]),
@@ -125,11 +129,21 @@ check(
 check(
   "Reproducible-v1 upgrade contract remains documented",
   includesAll(reproducibleDoc, [
-    "destineylu/codex-router",
+    "destineylu/codex-fusion",
     "duolahypercho/codex-router",
     "miuuyy/codex-chatgpt-web",
     "feifeigong/codex-auto-resume",
     "npm run upstream:status",
+  ]),
+);
+check(
+  "Core upstream authorship and attribution remain explicit",
+  includesAll(notice, [
+    "duolahypercho/codex-router",
+    "miuuyy/codex-chatgpt-web",
+    "feifeigong/codex-auto-resume",
+    "opencodex",
+    "devin-2api",
   ]),
 );
 
@@ -143,6 +157,7 @@ const releaseSensitive = [
   ["apps/control-center/electron/codex-chatgpt-web.mjs", chatgptWeb],
   ["apps/control-center/electron/codex-auto-resume.mjs", autoResume],
   ["docs/REPRODUCIBLE-V1.md", reproducibleDoc],
+  ["NOTICE.md", notice],
 ];
 
 const personalPatterns = [

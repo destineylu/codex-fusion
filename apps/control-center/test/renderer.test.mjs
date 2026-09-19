@@ -747,7 +747,7 @@ test("the production renderer exposes model discovery and picker actions", { tim
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.getByRole("navigation", { name: "Control center sections" }).waitFor();
     const wordmark = page.locator(".router-wordmark");
-    assert.equal((await wordmark.locator("strong").innerText()).trim(), "Codex Router");
+    assert.equal((await wordmark.locator("strong").innerText()).trim(), "Codex Fusion");
     assert.equal(await wordmark.locator("img").count(), 0);
     await page.waitForFunction(() => window.routerControlTest.navigationReady());
     await page.evaluate(() => window.routerControlTest.setUsageDelay(600));

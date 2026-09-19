@@ -10,7 +10,7 @@
 - Windows 默认工作目录：`%LOCALAPPDATA%\codex-router`
 - 当前仓库存在多项本地未提交补丁；**禁止**在升级前执行 `git reset --hard`、盲目 checkout 覆盖或直接 `update`。
 - 模型策略：显式 provider / 显式 model；**禁止自动 fallback / 自动换模型**。
-- 可重复发行源：`https://github.com/destineylu/codex-router.git` 的 `main`。
+- 可重复发行源：`https://github.com/destineylu/codex-fusion.git` 的 `main`；`destineylu/codex-router` 仅作为仓库改名前的历史兼容地址识别。
 - Router 参考上游：`https://github.com/duolahypercho/codex-router.git`；只用于审计/适配，不由生产安装自动合并。
 - 发行与上游升级总规则见 `docs/REPRODUCIBLE-V1.md`。
 

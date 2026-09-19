@@ -1,6 +1,6 @@
-# Installation, migration, and upgrades
+# Codex Fusion installation, migration, and upgrades
 
-This page covers the Codex target:
+This page covers the Codex Fusion distribution for the Codex target. The routing core retains the established Codex Router command and compatibility names:
 
 ```sh
 ./bin/model-router codex doctor
@@ -28,8 +28,8 @@ the same command.
 ## Ask Codex to install it
 
 ```text
-Install Codex Router from:
-https://github.com/duolahypercho/codex-router
+Install Codex Fusion from:
+https://github.com/destineylu/codex-fusion
 
 Follow AGENTS.md. Preserve all of my existing Codex settings and ChatGPT login.
 Use only the provider authentication I choose, safely migrate recognized older
@@ -45,7 +45,7 @@ definition stores the checkout's absolute path.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.sh \
   | sh -s -- --target codex --guided --with-tray
 ```
 
@@ -53,23 +53,25 @@ Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "codex-router-install.ps1"
-Invoke-WebRequest https://raw.githubusercontent.com/duolahypercho/codex-router/main/install.ps1 -OutFile $installer
+Invoke-WebRequest https://raw.githubusercontent.com/destineylu/codex-fusion/main/install.ps1 -OutFile $installer
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Target codex -Guided -WithTray
 ```
 
 Clone-and-review installation is also supported:
 
 ```sh
-git clone https://github.com/duolahypercho/codex-router.git
-cd codex-router
+git clone https://github.com/destineylu/codex-fusion.git
+cd codex-fusion
 ./install.sh --target codex --guided --with-tray
 ```
 
 ```powershell
-git clone https://github.com/duolahypercho/codex-router.git
-Set-Location codex-router
+git clone https://github.com/destineylu/codex-fusion.git
+Set-Location codex-fusion
 ./install.ps1 -Target codex -Guided -WithTray
 ```
+
+The original Router reference upstream remains <https://github.com/duolahypercho/codex-router>; Codex Fusion reviews and adopts upstream Router changes deliberately rather than making end users install that repository directly.
 
 The recommended commands install the complete desktop experience without an
 extra question: the macOS menu-bar app with its Electron Control Center and
