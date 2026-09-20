@@ -1,6 +1,8 @@
 # Codex Router 本地部署与升级保护存档 — 2026-09-18
 
 > **升级前先读。** 本文件记录 2026-09-18 已完成并验收的本地部署。升级 Router 时不得直接覆盖这些能力，也不要重新调查已经明确解决的问题。
+>
+> 独立功能总览与“一键复刻”机制见：`docs/CODEX-FUSION-INDEPENDENT-FEATURES-2026-09-20.md`。该总览覆盖模型真实性、Context Economy、Xkiro 双账号、第三方 Multi-Agent、Control Center、verify-model / SSE 兼容、Usage / Windows lifecycle，以及 2026-09-20 新增的原生 GPT 多账号 Profile Manager。
 
 ## 1. 当前基线
 

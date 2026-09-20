@@ -4,6 +4,8 @@
 
 For v1 compatibility, the routing engine is still named **Codex Router** internally. Existing paths, scripts, provider IDs, services, scheduled tasks, and sidecar directories such as `%LOCALAPPDATA%\codex-router`, `codex-router.ps1`, `model-router.ps1`, and `codex-router-sidecars` intentionally keep their established names. The product brand changed; the proven runtime plumbing did not.
 
+For a concise map of the independently developed features and the exact mechanism that makes the distribution reproducible for other users, see [Codex Fusion / codex-router 独立开发功能总览](docs/CODEX-FUSION-INDEPENDENT-FEATURES-2026-09-20.md).
+
 ## 中文：从零开始，照着做即可完成安装
 
 这一版不是单独的 Router，而是把几套已经验证过的能力组合在一起，同时保持它们彼此隔离：
