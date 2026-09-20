@@ -4,7 +4,7 @@ import { Badge, Button, Dialog, InlineNotice, PageHeader, SectionHeading, Toggle
 import { compactNumber } from "../lib";
 import { LANGUAGE_OPTIONS, type LanguageId, type Translate } from "../i18n";
 import { UI_SCALE_OPTIONS, type UiScale } from "../ui-scale";
-import type { ChatGptSessionStatus, CodexAgentMode, CodexAgentModeSnapshot, CodexAutoResumeAction, CodexAutoResumeSnapshot, CodexChatGptWebAction, CodexChatGptWebSnapshot, DoctorSnapshot, PresenceSnapshot, RouterControlApi, RouterHealth, RouterTarget, VisionEngine } from "../types";
+import type { ChatGptSessionStatus, CodexAccountProfile, CodexAccountProfilesSnapshot, CodexAgentMode, CodexAgentModeSnapshot, CodexAutoResumeAction, CodexAutoResumeSnapshot, CodexChatGptWebAction, CodexChatGptWebSnapshot, DoctorSnapshot, PresenceSnapshot, RouterControlApi, RouterHealth, RouterTarget, VisionEngine } from "../types";
 import { useOptimisticValues, type RunAction } from "../useOptimisticValues";
 
 // Mirrors RETENTION_MIN/MAX/DEFAULT_TTL_DAYS in src/tool-result-retention.mjs.
@@ -55,6 +55,12 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
   const [codexAutoResumeReport, setCodexAutoResumeReport] = useState<string>();
   const [codexChatGptWeb, setCodexChatGptWeb] = useState<CodexChatGptWebSnapshot>();
   const [codexChatGptWebReport, setCodexChatGptWebReport] = useState<string>();
+  const [codexAccounts, setCodexAccounts] = useState<CodexAccountProfilesSnapshot>();
+  const [codexAccountsReport, setCodexAccountsReport] = useState<string>();
+  const [accountCallbackUrl, setAccountCallbackUrl] = useState("");
+  const [accountEditor, setAccountEditor] = useState<{ mode: "add" | "rename"; id?: string; value: string } | null>(null);
+  const [pendingAccountSwitch, setPendingAccountSwitch] = useState<CodexAccountProfile | null>(null);
+  const [pendingAccountDelete, setPendingAccountDelete] = useState<CodexAccountProfile | null>(null);
   useEffect(() => {
     let active = true;
     if (!api) {
@@ -139,6 +145,54 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
     });
     return () => { active = false; };
   }, [api, refreshing]);
+  useEffect(() => {
+    let active = true;
+    if (!api || typeof api.getCodexAccounts !== "function") {
+      setCodexAccounts(undefined);
+      return () => { active = false; };
+    }
+    void api.getCodexAccounts().then((result) => {
+      if (active) setCodexAccounts(result);
+    }).catch((error) => {
+      if (!active) return;
+      setCodexAccounts({
+        supported: false,
+        root: "",
+        profiles: [],
+        liveAuthPresent: false,
+        liveManaged: false,
+        desktopRunning: false,
+        routerRestartRequired: false,
+        configMutationRequired: false,
+        why: error instanceof Error ? error.message : "Codex account profiles are unavailable.",
+      });
+    });
+    return () => { active = false; };
+  }, [api, refreshing]);
+  useEffect(() => {
+    const session = codexAccounts?.loginSession;
+    if (!api || typeof api.getCodexAccounts !== "function" || !session || !["starting", "waiting"].includes(session.status)) {
+      return undefined;
+    }
+    let active = true;
+    const poll = () => {
+      void api.getCodexAccounts().then((result) => {
+        if (!active) return;
+        setCodexAccounts(result);
+        if (result.loginSession?.report) setCodexAccountsReport(result.loginSession.report);
+      }).catch(() => {
+        // Keep the current OAuth instructions visible through transient read failures.
+      });
+    };
+    const timer = window.setInterval(poll, 1_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [api, codexAccounts?.loginSession?.id, codexAccounts?.loginSession?.status]);
+  useEffect(() => {
+    setAccountCallbackUrl("");
+  }, [codexAccounts?.loginSession?.id]);
   const trayControlsUnavailable = trayCapability?.supported === false;
   const repairFailures = useMemo(
     () => (repairReport?.checks ?? []).filter((check) => check.status === "fail"),
@@ -189,6 +243,22 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
       if (result.report) setCodexChatGptWebReport(result.report);
       return result;
     });
+  };
+  const runCodexAccountAction = (label: string, action: () => Promise<CodexAccountProfilesSnapshot>) => {
+    void runAction(label, async () => {
+      const result = await action();
+      setCodexAccounts(result);
+      if (result.report) setCodexAccountsReport(result.report);
+      return result;
+    });
+  };
+  const formatAccountStatus = (profile: CodexAccountProfile) => {
+    if (profile.active) return profile.refreshRequired ? "当前使用 · 待刷新" : "当前使用";
+    if (profile.refreshRequired) return "可切换 · 打开 Codex 后刷新";
+    if (profile.expired) return "登录已过期";
+    if (!profile.usable) return "登录不可用";
+    if (typeof profile.expiresInHours === "number") return `登录有效 · 约 ${profile.expiresInHours}h`;
+    return "登录有效";
   };
 
   // Repair reinstalls and restarts the service, so it can outlast several
@@ -291,6 +361,212 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
               </div>
             </div>
             <InlineNotice tone="neutral" title={t("settings.restart.title")}>{t("settings.restart.body")}</InlineNotice>
+          </section>
+
+          <section className="panel-section">
+            <SectionHeading
+              title="ChatGPT 原生账号"
+              description="管理 Codex Native GPT 登录身份。默认使用官方浏览器 OAuth；无痕窗口若无法自动回调 localhost，可把完整回调 URL 手工提交给 Control Center。设备代码登录保留为备用。"
+            />
+            <div className="settings-list codex-account-list">
+              {codexAccounts?.profiles.length ? codexAccounts.profiles.map((profile) => (
+                <div className="setting-row codex-account-row" key={profile.id}>
+                  <div className="codex-account-copy">
+                    <div className="codex-account-title">
+                      <strong>{profile.label}</strong>
+                      <Badge tone={profile.active ? "success" : profile.expired || !profile.usable ? "warning" : "neutral"}>
+                        {formatAccountStatus(profile)}
+                      </Badge>
+                    </div>
+                    <small>
+                      {profile.identityFingerprint ? `identity ${profile.identityFingerprint}` : "identity 已隔离"}
+                      {profile.markedActive && !profile.liveMatches ? " · 活动标记与当前 auth.json 不一致" : ""}
+                    </small>
+                  </div>
+                  <div className="codex-account-actions">
+                    {!profile.active ? (
+                      <Button
+                        variant="primary"
+                        disabled={!api || !profile.usable}
+                        onClick={() => setPendingAccountSwitch(profile)}
+                      >
+                        切换
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="secondary"
+                      disabled={!api}
+                      onClick={() => setAccountEditor({ mode: "rename", id: profile.id, value: profile.label })}
+                    >
+                      重命名
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={!api || profile.active}
+                      onClick={() => setPendingAccountDelete(profile)}
+                    >
+                      删除
+                    </Button>
+                  </div>
+                </div>
+              )) : (
+                <div className="setting-row static-row">
+                  <div>
+                    <strong>{codexAccounts?.liveAuthPresent ? "当前 Codex 登录尚未纳入账号管理" : "尚未保存 ChatGPT 账号"}</strong>
+                    <small>
+                      {codexAccounts?.liveAuthPresent
+                        ? "首次添加第二个账号时，Control Center 会先把当前 auth.json 保存为“当前 Codex 账号”，再启动隔离登录。"
+                        : "点击下方按钮，通过官方 Codex 登录流程添加账号。Control Center 不接收密码或 token。"}
+                    </small>
+                  </div>
+                  <Badge tone={codexAccounts?.liveAuthPresent ? "neutral" : "warning"}>
+                    {codexAccounts?.liveAuthPresent ? "Live login detected" : "No account"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <InlineNotice tone="neutral" title="Router 始终保持运行">
+              账号切换不会停止或重启 Router 4202/4203，也不会修改 config.toml、model_provider、模型 catalog、第三方 Provider 或 ChatGPT Web Bridge。第一版只做手动显式切换，不自动轮换账号。
+            </InlineNotice>
+            {codexAccounts?.desktopRunning ? (
+              <InlineNotice tone="warning" title="切换前需退出 Codex Desktop">
+                当前检测到 Codex Desktop 正在运行。添加和重命名不受影响；真正切换账号时请先完全退出 Codex Desktop。Router 无需退出。
+              </InlineNotice>
+            ) : null}
+            {codexAccounts?.loginSession ? (
+              <InlineNotice
+                tone={codexAccounts.loginSession.status === "completed"
+                  ? "success"
+                  : codexAccounts.loginSession.status === "failed"
+                    ? "danger"
+                    : "neutral"}
+                title={codexAccounts.loginSession.status === "completed"
+                  ? "ChatGPT 登录完成"
+                  : codexAccounts.loginSession.status === "failed"
+                    ? "ChatGPT 登录未完成"
+                    : codexAccounts.loginSession.mode === "browser"
+                      ? "等待浏览器 OAuth 回调"
+                      : "等待设备代码授权"}
+              >
+                <div className="credential-form">
+                  <p>
+                    {codexAccounts.loginSession.status === "completed"
+                      ? codexAccounts.loginSession.report || "新账号已保存。"
+                      : codexAccounts.loginSession.status === "failed"
+                        ? codexAccounts.loginSession.error || "登录未完成。"
+                        : codexAccounts.loginSession.mode === "browser"
+                          ? codexAccounts.loginSession.callbackSubmittedAt
+                            ? "localhost 回调已提交给官方 Codex 登录进程，正在等待 auth.json 写入。"
+                            : "可在弹出的浏览器里直接登录，也可以复制同一授权地址到 Chrome 无痕窗口。若登录后最终停在 localhost:1455 页面或显示无法访问，请复制地址栏中的完整回调 URL 粘贴到下方。"
+                          : codexAccounts.loginSession.status === "starting"
+                            ? "官方 Codex 正在申请一次性设备代码。"
+                            : "在 Chrome 无痕窗口中打开下面的验证地址，登录目标 ChatGPT 账号后输入一次性代码。此备用流程完全不依赖 localhost 回调。"}
+                  </p>
+
+                  {codexAccounts.loginSession.mode === "browser" && codexAccounts.loginSession.authorizationUrl ? (
+                    <>
+                      <input
+                        aria-label="Codex OAuth 授权地址"
+                        readOnly
+                        value={codexAccounts.loginSession.authorizationUrl}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                      <Button
+                        variant="secondary"
+                        disabled={!api}
+                        onClick={() => api && void api.openExternal(codexAccounts.loginSession!.authorizationUrl!)}
+                      >
+                        打开本次授权页
+                      </Button>
+                    </>
+                  ) : null}
+
+                  {codexAccounts.loginSession.mode === "browser"
+                    && ["starting", "waiting"].includes(codexAccounts.loginSession.status) ? (
+                    <>
+                      <input
+                        aria-label="Codex OAuth 回调 URL"
+                        placeholder="http://localhost:1455/auth/callback?code=...&state=..."
+                        value={accountCallbackUrl}
+                        onChange={(event) => setAccountCallbackUrl(event.target.value)}
+                        onFocus={(event) => event.currentTarget.select()}
+                      />
+                      <div className="dialog-actions">
+                        <Button
+                          variant="primary"
+                          disabled={!api || !accountCallbackUrl.trim()}
+                          onClick={() => api && runCodexAccountAction(
+                            "Submit ChatGPT OAuth callback",
+                            () => api.submitCodexAccountCallback(accountCallbackUrl.trim()),
+                          )}
+                        >
+                          提交回调 URL
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {codexAccounts.loginSession.mode === "device" && codexAccounts.loginSession.verificationUrl ? (
+                    <input
+                      aria-label="设备登录地址"
+                      readOnly
+                      value={codexAccounts.loginSession.verificationUrl}
+                      onFocus={(event) => event.currentTarget.select()}
+                    />
+                  ) : null}
+                  {codexAccounts.loginSession.mode === "device" && codexAccounts.loginSession.userCode ? (
+                    <input
+                      aria-label="设备登录一次性代码"
+                      readOnly
+                      value={codexAccounts.loginSession.userCode}
+                      onFocus={(event) => event.currentTarget.select()}
+                    />
+                  ) : null}
+
+                  <div className="dialog-actions">
+                    {codexAccounts.loginSession.mode === "device" && codexAccounts.loginSession.verificationUrl ? (
+                      <Button
+                        variant="secondary"
+                        disabled={!api}
+                        onClick={() => api && void api.openExternal(codexAccounts.loginSession!.verificationUrl!)}
+                      >
+                        打开设备登录页
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      disabled={!api}
+                      onClick={() => api && runCodexAccountAction(
+                        ["starting", "waiting"].includes(codexAccounts.loginSession!.status)
+                          ? "Cancel ChatGPT login"
+                          : "Clear ChatGPT login status",
+                        () => api.cancelCodexAccountLogin(),
+                      )}
+                    >
+                      {["starting", "waiting"].includes(codexAccounts.loginSession.status) ? "取消本次登录" : "关闭状态"}
+                    </Button>
+                  </div>
+                </div>
+              </InlineNotice>
+            ) : null}
+            {codexAccounts?.why ? (
+              <InlineNotice tone="warning" title="账号状态需要确认">{codexAccounts.why}</InlineNotice>
+            ) : null}
+            {codexAccountsReport ? (
+              <InlineNotice tone="success" title="最近一次账号操作">{codexAccountsReport}</InlineNotice>
+            ) : null}
+            <div className="settings-actions">
+              <Button
+                variant="primary"
+                disabled={!api || codexAccounts?.supported === false}
+                onClick={() => setAccountEditor({
+                  mode: "add",
+                  value: `账号 ${(codexAccounts?.profiles.length || 0) + 1}`,
+                })}
+              >
+                + 添加 ChatGPT 账号
+              </Button>
+            </div>
           </section>
 
           <section className="panel-section">
@@ -778,6 +1054,126 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
           </section>
         </div>
       </div>
+
+      <Dialog
+        open={accountEditor !== null}
+        title={accountEditor?.mode === "rename" ? "重命名 ChatGPT 账号" : "添加 ChatGPT 账号"}
+        description={accountEditor?.mode === "rename"
+          ? "只修改 Control Center 中的显示名称，不改变登录身份。"
+          : "新账号始终使用隔离 CODEX_HOME。默认启动官方 Codex 浏览器 OAuth；你可以把同一授权地址复制到 Chrome 无痕窗口。若最后 localhost 回调打不开，再把完整回调 URL 粘贴回 Control Center。"}
+        onClose={() => setAccountEditor(null)}
+      >
+        <div className="credential-form">
+          <input
+            aria-label="ChatGPT 账号名称"
+            autoFocus
+            maxLength={64}
+            value={accountEditor?.value || ""}
+            onChange={(event) => setAccountEditor((current) => current ? { ...current, value: event.target.value } : current)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !accountEditor?.value.trim() || !api) return;
+              event.preventDefault();
+              const editor = accountEditor;
+              setAccountEditor(null);
+              if (editor.mode === "rename" && editor.id) {
+                runCodexAccountAction("Rename ChatGPT account", () => api.renameCodexAccount(editor.id!, editor.value.trim()));
+              } else {
+                runCodexAccountAction("Start ChatGPT browser login", () => api.startCodexAccountBrowserLogin(editor.value.trim()));
+              }
+            }}
+          />
+          <p>
+            {accountEditor?.mode === "rename"
+              ? "不会读取、显示或重写任何密码和 token。"
+              : "两种登录都由官方 Codex CLI 负责；Control Center 不接收密码。浏览器 OAuth 支持 CLIProxyAPI 风格的手工 localhost 回调提交；设备代码只作为 localhost 仍不可用时的备用。"}
+          </p>
+        </div>
+        <div className="dialog-actions">
+          <Button variant="secondary" onClick={() => setAccountEditor(null)}>取消</Button>
+          {accountEditor?.mode === "add" ? (
+            <Button
+              variant="secondary"
+              disabled={!api || !accountEditor?.value.trim()}
+              onClick={() => {
+                if (!api || !accountEditor?.value.trim()) return;
+                const editor = accountEditor;
+                setAccountEditor(null);
+                runCodexAccountAction("Start ChatGPT device login", () => api.startCodexAccountDeviceLogin(editor.value.trim()));
+              }}
+            >
+              设备代码登录（备用）
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            disabled={!api || !accountEditor?.value.trim()}
+            onClick={() => {
+              if (!api || !accountEditor?.value.trim()) return;
+              const editor = accountEditor;
+              setAccountEditor(null);
+              if (editor.mode === "rename" && editor.id) {
+                runCodexAccountAction("Rename ChatGPT account", () => api.renameCodexAccount(editor.id!, editor.value.trim()));
+              } else {
+                runCodexAccountAction("Start ChatGPT browser login", () => api.startCodexAccountBrowserLogin(editor.value.trim()));
+              }
+            }}
+          >
+            {accountEditor?.mode === "rename" ? "保存名称" : "浏览器 OAuth / 无痕登录（推荐）"}
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingAccountSwitch !== null}
+        title="切换 ChatGPT 原生账号？"
+        description="仅切换 Codex Native GPT 的认证身份；Router 不重启。"
+        onClose={() => setPendingAccountSwitch(null)}
+      >
+        <p className="dialog-copy">
+          切换到 <strong>{pendingAccountSwitch?.label}</strong> 前，请完全退出 Codex Desktop。Control Center 会先把当前账号最新 auth 状态同步回其 Profile，再原子替换 live auth.json，并保留回滚备份。Router 4202/4203、第三方模型、ChatGPT Web 和 config.toml 全程保持不动。
+        </p>
+        <div className="dialog-actions">
+          <Button variant="secondary" onClick={() => setPendingAccountSwitch(null)}>取消</Button>
+          <Button
+            variant="primary"
+            disabled={!api || !pendingAccountSwitch}
+            onClick={() => {
+              if (!api || !pendingAccountSwitch) return;
+              const profile = pendingAccountSwitch;
+              setPendingAccountSwitch(null);
+              runCodexAccountAction("Switch ChatGPT account", () => api.switchCodexAccount(profile.id));
+            }}
+          >
+            已退出 Codex，切换账号
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingAccountDelete !== null}
+        title="删除 ChatGPT 账号 Profile？"
+        description="只删除 Control Center 保存的该账号 Profile，不注销 ChatGPT，也不改变 Router。"
+        onClose={() => setPendingAccountDelete(null)}
+      >
+        <p className="dialog-copy">
+          删除 <strong>{pendingAccountDelete?.label}</strong> 的本地 Profile？当前正在使用的账号不能删除；以后需要时可再次通过官方 Codex 登录添加。
+        </p>
+        <div className="dialog-actions">
+          <Button variant="secondary" onClick={() => setPendingAccountDelete(null)}>取消</Button>
+          <Button
+            variant="danger"
+            disabled={!api || !pendingAccountDelete}
+            onClick={() => {
+              if (!api || !pendingAccountDelete) return;
+              const profile = pendingAccountDelete;
+              setPendingAccountDelete(null);
+              runCodexAccountAction("Delete ChatGPT account", () => api.deleteCodexAccount(profile.id));
+            }}
+          >
+            删除 Profile
+          </Button>
+        </div>
+      </Dialog>
 
       <Dialog
         open={confirmSessionSharing}

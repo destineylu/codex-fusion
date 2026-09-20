@@ -1844,6 +1844,37 @@ progress::-webkit-progress-value { border-radius: 999px; background: var(--accen
 
 .settings-list .setting-row:last-child { border-bottom: 0; }
 
+.codex-account-row {
+  align-items: flex-start;
+}
+
+.codex-account-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.codex-account-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.codex-account-title > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-account-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
 .setting-row code {
   max-width: 45%;
   overflow: hidden;

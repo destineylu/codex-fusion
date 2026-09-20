@@ -39,6 +39,17 @@ import {
   controlCodexChatGptWeb,
   getCodexChatGptWebSnapshot,
 } from "./codex-chatgpt-web.mjs";
+import {
+  addCodexAccount,
+  cancelCodexAccountLogin,
+  deleteCodexAccount,
+  getCodexAccountProfilesSnapshot,
+  renameCodexAccount,
+  startCodexAccountBrowserLogin,
+  startCodexAccountDeviceLogin,
+  submitCodexAccountCallback,
+  switchCodexAccount,
+} from "./codex-account-profiles.mjs";
 
 // Codex is the one client-specific adapter this panel still exposes (native
 // GPT details and the current task default). Routed model identity and picker
@@ -798,6 +809,7 @@ export function registerIpcHandlers({
   handle("getCodexAgentMode", async () => getCodexAgentModeSnapshot());
   handle("getCodexAutoResume", async () => getCodexAutoResumeSnapshot());
   handle("getCodexChatGptWeb", async () => getCodexChatGptWebSnapshot());
+  handle("getCodexAccounts", async () => getCodexAccountProfilesSnapshot());
   handle("getContextSessions", async () => getContextSessionsSnapshot());
   handle("getDoctor", async () => {
     const result = await runRouterScript("doctor.mjs", ["--json"], { timeoutMs: 120_000, allowNonZero: true });
@@ -1195,6 +1207,30 @@ export function registerIpcHandlers({
   }, { requiresCompatibleRouter: false });
   handleAction("controlCodexChatGptWeb", async ({ action } = {}) => {
     return controlCodexChatGptWeb(oneOf(action, CODEX_CHATGPT_WEB_ACTIONS, "Codex ChatGPT Web action"));
+  }, { requiresCompatibleRouter: false });
+  handleAction("addCodexAccount", async ({ label } = {}) => {
+    return addCodexAccount(stringValue(label, "Account name"));
+  }, { requiresCompatibleRouter: false });
+  handleAction("startCodexAccountBrowserLogin", async ({ label } = {}) => {
+    return startCodexAccountBrowserLogin(stringValue(label, "Account name"));
+  }, { requiresCompatibleRouter: false });
+  handleAction("startCodexAccountDeviceLogin", async ({ label } = {}) => {
+    return startCodexAccountDeviceLogin(stringValue(label, "Account name"));
+  }, { requiresCompatibleRouter: false });
+  handle("submitCodexAccountCallback", async ({ callbackUrl } = {}) => {
+    return submitCodexAccountCallback(stringValue(callbackUrl, "Callback URL"));
+  });
+  handle("cancelCodexAccountLogin", async () => {
+    return cancelCodexAccountLogin();
+  });
+  handleAction("renameCodexAccount", async ({ id, label } = {}) => {
+    return renameCodexAccount(stringValue(id, "Account id"), stringValue(label, "Account name"));
+  }, { requiresCompatibleRouter: false });
+  handleAction("switchCodexAccount", async ({ id } = {}) => {
+    return switchCodexAccount(stringValue(id, "Account id"));
+  }, { requiresCompatibleRouter: false });
+  handleAction("deleteCodexAccount", async ({ id } = {}) => {
+    return deleteCodexAccount(stringValue(id, "Account id"));
   }, { requiresCompatibleRouter: false });
   handleAction("setCodexContextMode", async ({ mode } = {}) => {
     if (mode !== "light" && mode !== "full") throw new Error("Codex context mode must be light or full.");

@@ -61,6 +61,21 @@ import {
   getCodexChatGptWebSnapshot,
   patchCodexChatGptWebPreflightBytes,
 } from "../apps/control-center/electron/codex-chatgpt-web.mjs";
+import {
+  addCodexAccount,
+  cancelCodexAccountLogin,
+  codexDesktopRunning,
+  deleteCodexAccount,
+  getCodexAccountProfilesSnapshot,
+  isWindowsCodexDesktopExecutable,
+  parseCodexBrowserLoginOutput,
+  parseCodexDeviceLoginOutput,
+  renameCodexAccount,
+  startCodexAccountBrowserLogin,
+  startCodexAccountDeviceLogin,
+  submitCodexAccountCallback,
+  switchCodexAccount,
+} from "../apps/control-center/electron/codex-account-profiles.mjs";
 
 test("Control Center navigation accepts only one fixed widget destination", () => {
   assert.deepEqual(controlCenterDestination(["electron", ".", NAVIGATION_ARGUMENT, "usage"]), {
@@ -1878,6 +1893,481 @@ for (const mode of ["timeout", "overflow"]) {
     }
   });
 }
+
+function accountTestToken(subject, expiresAtSeconds = Math.floor(Date.now() / 1000) + 86_400) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none" })}.${encode({ sub: subject, exp: expiresAtSeconds })}.sig`;
+}
+
+function accountTestAuth(accountId, tokenTag) {
+  return {
+    auth_mode: "chatgpt",
+    tokens: {
+      access_token: accountTestToken(tokenTag),
+      refresh_token: `refresh-${tokenTag}`,
+      account_id: accountId,
+    },
+    last_refresh: "2026-09-20T08:00:00.000Z",
+  };
+}
+
+test("Codex Desktop detection ignores CLI/app-server executables and recognizes the Windows app package", () => {
+  assert.equal(
+    isWindowsCodexDesktopExecutable("C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\vendor\\bin\\codex.exe"),
+    false,
+  );
+  assert.equal(
+    isWindowsCodexDesktopExecutable("C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe"),
+    false,
+  );
+  assert.equal(
+    isWindowsCodexDesktopExecutable("C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\Codex.exe"),
+    true,
+  );
+  assert.equal(
+    isWindowsCodexDesktopExecutable("C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe"),
+    true,
+  );
+
+  const cliOnly = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({
+      status: 0,
+      stdout: [
+        "C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\vendor\\bin\\codex.exe",
+        "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe",
+      ].join("\r\n"),
+    }),
+  });
+  assert.equal(cliOnly, false);
+
+  const desktopPresent = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({
+      status: 0,
+      stdout: "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\Codex.exe\r\n",
+    }),
+  });
+  assert.equal(desktopPresent, true);
+
+  const unreadableIdentity = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({ status: 0, stdout: "__CODEX_PATH_UNREADABLE__\r\n" }),
+  });
+  assert.equal(unreadableIdentity, true);
+
+  const failedProbe = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({ status: 1, stdout: "", stderr: "probe failed" }),
+  });
+  assert.equal(failedProbe, true);
+});
+
+test("Codex browser-login prompt parser extracts the authorization URL, state, and callback port", () => {
+  const authorizationUrl = "https://auth.openai.com/oauth/authorize?client_id=test&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=state-123";
+  assert.deepEqual(parseCodexBrowserLoginOutput(`Open this URL: ${authorizationUrl}\n`), {
+    authorizationUrl,
+    expectedState: "state-123",
+    callbackPort: 1455,
+  });
+});
+
+test("Codex browser login accepts a CLIProxyAPI-style manual localhost callback and saves the isolated profile", async () => {
+  const { createServer } = await import("node:http");
+  const home = await mkdtemp(path.join(os.tmpdir(), "router-codex-browser-login-"));
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => true;
+  let spawned;
+  let receivedPath = "";
+  const server = createServer(async (request, response) => {
+    receivedPath = request.url || "";
+    await writeFile(
+      path.join(spawned.options.env.CODEX_HOME, "auth.json"),
+      JSON.stringify(accountTestAuth("acct-b", "b-browser")),
+    );
+    response.statusCode = 200;
+    response.end("Authentication successful");
+    setImmediate(() => child.emit("exit", 0));
+  });
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-live")));
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const port = address.port;
+    const state = "state-browser-123";
+    const authorizationUrl = "https://auth.openai.com/oauth/authorize?client_id=test"
+      + `&redirect_uri=${encodeURIComponent(`http://localhost:${port}/auth/callback`)}`
+      + `&state=${state}`;
+
+    const started = startCodexAccountBrowserLogin("无痕账号 B", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+      binary: "/usr/bin/codex",
+      loginTimeoutMs: 30_000,
+      spawnImpl(command, args, options) {
+        spawned = { command, args, options };
+        return child;
+      },
+    });
+    assert.equal(started.loginSession?.mode, "browser");
+    assert.equal(started.loginSession?.status, "starting");
+    assert.deepEqual(spawned.args, ["login"]);
+    assert.match(spawned.options.env.CODEX_HOME, /native-accounts[\\/]profiles[\\/]/);
+
+    child.stdout.emit("data", Buffer.from(`Open this URL: ${authorizationUrl}\n`));
+    const waiting = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(waiting.loginSession?.status, "waiting");
+    assert.equal(waiting.loginSession?.authorizationUrl, authorizationUrl);
+
+    await assert.rejects(
+      () => submitCodexAccountCallback(
+        `http://localhost:${port}/auth/callback?code=wrong&state=wrong-state`,
+        { home, env: {}, platform: "linux", desktopRunning: false },
+      ),
+      /state.*不匹配/,
+    );
+    assert.equal(receivedPath, "");
+
+    const submitted = await submitCodexAccountCallback(
+      `http://localhost:${port}/auth/callback?code=auth-code-123&state=${state}`,
+      { home, env: {}, platform: "linux", desktopRunning: false },
+    );
+    assert.match(submitted.report || "", /回调已转交/);
+    assert.match(receivedPath, /code=auth-code-123/);
+    assert.match(receivedPath, /state=state-browser-123/);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const completed = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(completed.loginSession?.status, "completed");
+    assert.equal(completed.profiles.length, 2);
+    assert.equal(completed.profiles.find((profile) => profile.label === "无痕账号 B")?.active, false);
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-a");
+
+    const cleared = cancelCodexAccountLogin({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(cleared.loginSession, undefined);
+  } finally {
+    cancelCodexAccountLogin({ home, env: {}, platform: "linux", desktopRunning: false });
+    await new Promise((resolve) => server.close(resolve));
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Codex device-login prompt parser extracts the official verification URL and one-time code", () => {
+  const parsed = parseCodexDeviceLoginOutput(
+    "\u001b[94mhttps://auth.openai.com/codex/device\u001b[0m\n"
+    + "2. Enter this one-time code (expires in 15 minutes)\n"
+    + "\u001b[94mCODE-12345\u001b[0m\n",
+  );
+  assert.deepEqual(parsed, {
+    verificationUrl: "https://auth.openai.com/codex/device",
+    userCode: "CODE-12345",
+  });
+});
+
+test("Codex device login exposes a nonblocking incognito flow and saves the isolated profile on completion", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "router-codex-device-login-"));
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => true;
+  let spawned;
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-live")));
+
+    const started = startCodexAccountDeviceLogin("无痕账号 B", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+      binary: "/usr/bin/codex",
+      deviceLoginTimeoutMs: 30_000,
+      spawnImpl(command, args, options) {
+        spawned = { command, args, options };
+        return child;
+      },
+    });
+
+    assert.equal(started.loginSession?.status, "starting");
+    assert.deepEqual(spawned.args, ["login", "--device-auth"]);
+    assert.match(spawned.options.env.CODEX_HOME, /native-accounts[\\/]profiles[\\/]/);
+
+    child.stdout.emit(
+      "data",
+      Buffer.from(
+        "1. Open this link in your browser and sign in to your account\n"
+        + "https://auth.openai.com/codex/device\n"
+        + "2. Enter this one-time code (expires in 15 minutes)\n"
+        + "CODE-12345\n",
+      ),
+    );
+    const waiting = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(waiting.loginSession?.status, "waiting");
+    assert.equal(waiting.loginSession?.verificationUrl, "https://auth.openai.com/codex/device");
+    assert.equal(waiting.loginSession?.userCode, "CODE-12345");
+
+    await writeFile(
+      path.join(spawned.options.env.CODEX_HOME, "auth.json"),
+      JSON.stringify(accountTestAuth("acct-b", "b-device")),
+    );
+    child.emit("exit", 0);
+
+    const completed = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(completed.loginSession?.status, "completed");
+    assert.equal(completed.profiles.length, 2);
+    assert.equal(completed.profiles.find((profile) => profile.label === "无痕账号 B")?.active, false);
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-a");
+
+    const cleared = cancelCodexAccountLogin({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(cleared.loginSession, undefined);
+  } finally {
+    cancelCodexAccountLogin({ home, env: {}, platform: "linux", desktopRunning: false });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Codex account switching is auth-only and contains no Router lifecycle or config mutation path", async () => {
+  const source = await readFile(
+    new URL("../apps/control-center/electron/codex-account-profiles.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /controlService|runControl|controlTray|service\s*(?:stop|start|restart)/);
+  assert.doesNotMatch(source, /config\.toml|model_provider|merged-models|model_catalog/i);
+  assert.match(source, /routerRestartRequired:\s*false/);
+  assert.match(source, /configMutationRequired:\s*false/);
+});
+
+test("Codex account profiles add a second official-login profile without changing the live account", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "router-codex-accounts-add-"));
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-initial")));
+
+    const result = await addCodexAccount("工作账号 B", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+      loginRunner: async (isolatedHome) => {
+        await mkdir(isolatedHome, { recursive: true });
+        await writeFile(path.join(isolatedHome, "auth.json"), JSON.stringify(accountTestAuth("acct-b", "b-login")));
+      },
+    });
+
+    assert.equal(result.profiles.length, 2);
+    assert.equal(result.routerRestartRequired, false);
+    assert.equal(result.configMutationRequired, false);
+    assert.equal(result.liveManaged, true);
+    assert.equal(result.profiles.find((profile) => profile.active)?.label, "当前 Codex 账号");
+    assert.equal(result.profiles.find((profile) => profile.label === "工作账号 B")?.active, false);
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-a");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Codex account switching refuses an open Desktop, syncs refreshed auth, and leaves Router/config sentinels untouched", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "router-codex-accounts-switch-"));
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  const config = path.join(liveHome, "config.toml");
+  const routerSentinel = path.join(home, "router.pid");
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-initial")));
+    await writeFile(config, 'model_provider = "openai"\nopenai_base_url = "http://127.0.0.1:4202/_codex-router/redacted/v1"\n');
+    await writeFile(routerSentinel, "4242\n");
+
+    const added = await addCodexAccount("账号 B", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+      loginRunner: async (isolatedHome) => {
+        await mkdir(isolatedHome, { recursive: true });
+        await writeFile(path.join(isolatedHome, "auth.json"), JSON.stringify(accountTestAuth("acct-b", "b-login")));
+      },
+    });
+    const accountA = added.profiles.find((profile) => profile.active);
+    const accountB = added.profiles.find((profile) => profile.label === "账号 B");
+    assert.ok(accountA);
+    assert.ok(accountB);
+
+    const refreshedA = accountTestAuth("acct-a", "a-refreshed");
+    await writeFile(liveAuth, JSON.stringify(refreshedA));
+    const configBefore = await readFile(config, "utf8");
+    const routerBefore = await readFile(routerSentinel, "utf8");
+
+    assert.throws(
+      () => switchCodexAccount(accountB.id, {
+        home,
+        env: {},
+        platform: "linux",
+        desktopRunning: true,
+      }),
+      /退出 Codex Desktop/,
+    );
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-a");
+
+    const switched = switchCodexAccount(accountB.id, {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(switched.activeAccountId, accountB.id);
+    assert.equal(switched.routerRestartRequired, false);
+    assert.equal(switched.configMutationRequired, false);
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-b");
+    assert.equal(await readFile(config, "utf8"), configBefore);
+    assert.equal(await readFile(routerSentinel, "utf8"), routerBefore);
+
+    const storedA = JSON.parse(await readFile(
+      path.join(switched.root, "profiles", accountA.id, "auth.json"),
+      "utf8",
+    ));
+    assert.equal(storedA.tokens.access_token, refreshedA.tokens.access_token);
+
+    // Re-selecting the already-active account must preserve a newer token that
+    // Codex refreshed in live auth.json instead of restoring the older Profile
+    // copy that existed before the switch call began.
+    const refreshedB = accountTestAuth("acct-b", "b-refreshed");
+    await writeFile(liveAuth, JSON.stringify(refreshedB));
+    const sameAccount = switchCodexAccount(accountB.id, {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(sameAccount.activeAccountId, accountB.id);
+    assert.equal(
+      JSON.parse(await readFile(liveAuth, "utf8")).tokens.access_token,
+      refreshedB.tokens.access_token,
+    );
+    assert.equal(
+      JSON.parse(await readFile(
+        path.join(sameAccount.root, "profiles", accountB.id, "auth.json"),
+        "utf8",
+      )).tokens.access_token,
+      refreshedB.tokens.access_token,
+    );
+
+    assert.throws(
+      () => deleteCodexAccount(accountB.id, { home, env: {}, platform: "linux", desktopRunning: false }),
+      /active ChatGPT account/,
+    );
+    const renamed = renameCodexAccount(accountA.id, "备用账号 A", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(renamed.profiles.find((profile) => profile.id === accountA.id)?.label, "备用账号 A");
+    const snapshot = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(snapshot.profiles.length, 2);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Codex account switching accepts a refreshable profile whose access token expired", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "router-codex-accounts-refresh-"));
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-live")));
+
+    const added = await addCodexAccount("备用账号 B", {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+      loginRunner: async (isolatedHome) => {
+        await mkdir(isolatedHome, { recursive: true });
+        await writeFile(path.join(isolatedHome, "auth.json"), JSON.stringify(accountTestAuth("acct-b", "b-login")));
+      },
+    });
+    const accountB = added.profiles.find((profile) => profile.label === "备用账号 B");
+    assert.ok(accountB);
+
+    const expiredB = accountTestAuth("acct-b", "b-expired");
+    expiredB.tokens.access_token = accountTestToken("b-expired", Math.floor(Date.now() / 1000) - 3600);
+    await writeFile(
+      path.join(added.root, "profiles", accountB.id, "auth.json"),
+      JSON.stringify(expiredB),
+    );
+
+    const before = getCodexAccountProfilesSnapshot({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    const staleProfile = before.profiles.find((profile) => profile.id === accountB.id);
+    assert.equal(staleProfile?.expired, true);
+    assert.equal(staleProfile?.refreshRequired, true);
+    assert.equal(staleProfile?.usable, true);
+
+    const switched = switchCodexAccount(accountB.id, {
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(switched.activeAccountId, accountB.id);
+    assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-b");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
 
 test("router children inherit the proxy opt-in this install recorded", async () => {
   const runner = await readFile(

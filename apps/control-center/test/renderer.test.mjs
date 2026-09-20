@@ -207,6 +207,45 @@ const bridgeSource = String.raw`
     upstreamExternalProviderSupported: false,
     ...(report ? { report } : {}),
   });
+  let codexLoginSession;
+  let codexAccountProfiles = [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      label: "主账号",
+      active: true,
+      markedActive: true,
+      liveMatches: true,
+      usable: true,
+      expired: false,
+      identityFingerprint: "aaaabbbbcccc",
+      expiresInHours: 48,
+    },
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      label: "备用账号",
+      active: false,
+      markedActive: false,
+      liveMatches: false,
+      usable: true,
+      expired: false,
+      identityFingerprint: "ddddeeeeffff",
+      expiresInHours: 36,
+    },
+  ];
+  const codexAccountsSnapshot = (report) => ({
+    supported: true,
+    root: "C:/Users/test/.codex/codex-router/native-accounts",
+    profiles: codexAccountProfiles.map((profile) => ({ ...profile })),
+    activeAccountId: codexAccountProfiles.find((profile) => profile.active)?.id,
+    markedActiveAccountId: codexAccountProfiles.find((profile) => profile.markedActive)?.id,
+    liveAuthPresent: true,
+    liveManaged: true,
+    desktopRunning: false,
+    routerRestartRequired: false,
+    configMutationRequired: false,
+    ...(codexLoginSession ? { loginSession: { ...codexLoginSession } } : {}),
+    ...(report ? { report } : {}),
+  });
   const codexSkillSnapshot = () => {
     const specialized = ["comfyui", "xiaohongshu-box"].map((name) => ({
       name,
@@ -333,6 +372,7 @@ const bridgeSource = String.raw`
     getCodexSkillControl: async () => codexSkillSnapshot(),
     getCodexAutoResume: async () => codexAutoResumeSnapshot(),
     getCodexChatGptWeb: async () => codexChatGptWebSnapshot(),
+    getCodexAccounts: async () => codexAccountsSnapshot(),
     getAccountUsage: async () => {
       accountUsageReads += 1;
       await new Promise((resolve) => setTimeout(resolve, accountDelay ?? usageDelayMs));
@@ -623,6 +663,85 @@ const bridgeSource = String.raw`
           ? "Isolation verified: Codex still routes through Router and the ChatGPT Web bridge is reachable on loopback."
           : undefined,
       );
+    },
+    addCodexAccount: async (label) => {
+      record("addCodexAccount", label);
+      codexAccountProfiles = [
+        ...codexAccountProfiles,
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          label,
+          active: false,
+          markedActive: false,
+          liveMatches: false,
+          usable: true,
+          expired: false,
+          identityFingerprint: "111122223333",
+          expiresInHours: 72,
+        },
+      ];
+      return codexAccountsSnapshot("账号已通过官方 Codex 登录保存。当前活动账号未改变，Router 未重启。");
+    },
+    startCodexAccountBrowserLogin: async (label) => {
+      record("startCodexAccountBrowserLogin", label);
+      codexLoginSession = {
+        id: "44444444-4444-4444-8444-444444444444",
+        label,
+        mode: "browser",
+        status: "waiting",
+        startedAt: "2026-09-20T10:00:00.000Z",
+        authorizationUrl: "https://auth.openai.com/oauth/authorize?client_id=test&state=state-123",
+      };
+      return codexAccountsSnapshot("官方 Codex 浏览器 OAuth 已启动。");
+    },
+    startCodexAccountDeviceLogin: async (label) => {
+      record("startCodexAccountDeviceLogin", label);
+      codexLoginSession = {
+        id: "55555555-5555-4555-8555-555555555555",
+        label,
+        mode: "device",
+        status: "waiting",
+        startedAt: "2026-09-20T10:00:00.000Z",
+        verificationUrl: "https://auth.openai.com/codex/device",
+        userCode: "CODE-12345",
+      };
+      return codexAccountsSnapshot("设备代码登录已启动。请在无痕窗口打开登录地址并输入一次性代码；Router 保持运行。");
+    },
+    submitCodexAccountCallback: async (callbackUrl) => {
+      record("submitCodexAccountCallback", callbackUrl);
+      if (codexLoginSession) {
+        codexLoginSession = {
+          ...codexLoginSession,
+          callbackSubmittedAt: "2026-09-20T10:01:00.000Z",
+          report: "localhost 回调已转交给官方 Codex 登录进程，正在等待认证文件写入。",
+        };
+      }
+      return codexAccountsSnapshot("localhost 回调已转交给官方 Codex 登录进程，正在等待认证文件写入。");
+    },
+    cancelCodexAccountLogin: async () => {
+      record("cancelCodexAccountLogin");
+      codexLoginSession = undefined;
+      return codexAccountsSnapshot("ChatGPT 登录会话已关闭；当前 Codex 账号和 Router 均未改变。");
+    },
+    renameCodexAccount: async (id, label) => {
+      record("renameCodexAccount", id, label);
+      codexAccountProfiles = codexAccountProfiles.map((profile) => profile.id === id ? { ...profile, label } : profile);
+      return codexAccountsSnapshot("账号名称已更新；认证身份和 Router 配置均未改变。");
+    },
+    switchCodexAccount: async (id) => {
+      record("switchCodexAccount", id);
+      codexAccountProfiles = codexAccountProfiles.map((profile) => ({
+        ...profile,
+        active: profile.id === id,
+        markedActive: profile.id === id,
+        liveMatches: profile.id === id,
+      }));
+      return codexAccountsSnapshot("账号已切换。Router 全程保持运行；请重新打开 Codex Desktop 使用新账号。");
+    },
+    deleteCodexAccount: async (id) => {
+      record("deleteCodexAccount", id);
+      codexAccountProfiles = codexAccountProfiles.filter((profile) => profile.id !== id);
+      return codexAccountsSnapshot("账号 Profile 已删除；当前 Codex 登录和 Router 均未改变。");
     },
     setCodexContextMode: async (mode) => {
       record("setCodexContextMode", mode);
@@ -1084,6 +1203,80 @@ test("interface scale defaults to 100 percent and persists per renderer profile"
     assert.equal(await persistedScale.inputValue(), "120");
     assert.equal(await page.evaluate(() => document.documentElement.dataset.uiScale), "120");
     assert.equal(await page.evaluate(() => document.documentElement.style.zoom), "1.2");
+    assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);
+  } finally {
+    await browser.close();
+    await close();
+  }
+});
+
+test("Settings exposes explicit native ChatGPT account switching without Router lifecycle changes", { timeout: 120_000 }, async () => {
+  assert.equal(existsSync(path.join(dist, "index.html")), true, "npm test must build the renderer first");
+  assert.ok(chromiumPath, "No Chromium executable is available for the Control Center renderer test.");
+
+  const { url, close } = await serveRenderer();
+  const browser = await chromium.launch({
+    executablePath: chromiumPath,
+    headless: true,
+    args: process.platform === "linux" ? ["--no-sandbox"] : [],
+  });
+  const pageErrors = [];
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, locale: "en-US" });
+    page.setDefaultTimeout(10_000);
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") pageErrors.push(message.text());
+    });
+
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const accountsSection = page.locator("section.panel-section").filter({
+      has: page.getByRole("heading", { name: "ChatGPT 原生账号", exact: true }),
+    });
+    await accountsSection.waitFor();
+    const text = await accountsSection.innerText();
+    assert.match(text, /主账号/);
+    assert.match(text, /备用账号/);
+    assert.match(text, /Router 始终保持运行/);
+    assert.match(text, /不会停止或重启 Router 4202\/4203/);
+    assert.match(text, /不自动轮换账号/);
+
+    await accountsSection.getByRole("button", { name: "+ 添加 ChatGPT 账号", exact: true }).click();
+    const addDialog = page.getByRole("dialog").filter({ hasText: "添加 ChatGPT 账号" });
+    await addDialog.waitFor();
+    assert.match(await addDialog.innerText(), /localhost 回调/);
+    assert.equal(await addDialog.getByRole("button", { name: "设备代码登录（备用）", exact: true }).isVisible(), true);
+    await addDialog.getByRole("button", { name: "浏览器 OAuth / 无痕登录（推荐）", exact: true }).click();
+    await page.waitForFunction(() => window.routerControlTest.calls()
+      .some((call) => call.name === "startCodexAccountBrowserLogin"));
+    await accountsSection.getByText("等待浏览器 OAuth 回调", { exact: true }).waitFor();
+    assert.match(
+      await accountsSection.getByLabel("Codex OAuth 授权地址").inputValue(),
+      /auth\.openai\.com\/oauth\/authorize/,
+    );
+    const callbackInput = accountsSection.getByLabel("Codex OAuth 回调 URL");
+    await callbackInput.fill("http://localhost:1455/auth/callback?code=test-code&state=state-123");
+    await accountsSection.getByRole("button", { name: "提交回调 URL", exact: true }).click();
+    await page.waitForFunction(() => window.routerControlTest.calls()
+      .some((call) => call.name === "submitCodexAccountCallback"
+        && call.args[0].includes("code=test-code")
+        && call.args[0].includes("state=state-123")));
+    await accountsSection.getByText("localhost 回调已转交给官方 Codex 登录进程", { exact: false }).waitFor();
+    await accountsSection.getByRole("button", { name: "取消本次登录", exact: true }).click();
+    await page.waitForFunction(() => window.routerControlTest.calls()
+      .some((call) => call.name === "cancelCodexAccountLogin"));
+
+    const backupRow = accountsSection.locator(".codex-account-row").filter({ hasText: "备用账号" });
+    await backupRow.getByRole("button", { name: "切换", exact: true }).click();
+    const dialog = page.getByRole("dialog").filter({ hasText: "切换 ChatGPT 原生账号？" });
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /Router 4202\/4203/);
+    assert.match(await dialog.innerText(), /config\.toml/);
+    await dialog.getByRole("button", { name: "已退出 Codex，切换账号", exact: true }).click();
+    await page.waitForFunction(() => window.routerControlTest.calls()
+      .some((call) => call.name === "switchCodexAccount" && call.args[0] === "22222222-2222-4222-8222-222222222222"));
+    await accountsSection.getByText("Router 全程保持运行", { exact: false }).waitFor();
     assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);
   } finally {
     await browser.close();

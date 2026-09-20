@@ -26,6 +26,7 @@ current `main`:
 | Provider registry | Providers and model metadata are checked in under `config/`; local model files and explicit curation extend the catalog without adding request-path branches. | `src/model-registry.mjs`, `src/user-models.mjs`, `src/curate-models.mjs`, `README.md` |
 | Model discovery | Selected API providers can be queried through their `/models` endpoint. Results are cached and merged with the checked-in registry; discovery does not replace user model state. | `src/model-discovery.mjs`, `src/model-catalog-cache.mjs`, `test/model-discovery.test.mjs`, `test/provider-catalog-cache.test.mjs` |
 | Credentials | Provider API keys are read from protected owner-only files or documented environment sources; OAuth providers use their documented local sessions. Status and diagnostics redact values. This is file protection, not an encrypted credential database. | `src/provider-credentials.mjs`, `src/file-security.mjs`, `test/provider-credentials.test.mjs`, `README.md` |
+| Native ChatGPT accounts | Windows Control Center can save multiple owner-only Codex auth Profiles, add accounts through official Codex OAuth/device-auth, relay a validated localhost callback for incognito sign-in, and explicitly switch the live Codex account while Desktop is closed. Switching preserves Router, provider, catalog, and ChatGPT Web state; automatic account rotation is not shipped. | `apps/control-center/electron/codex-account-profiles.mjs`, `apps/control-center/src/pages/SettingsPage.tsx`, `test/control-center-electron.test.mjs`, `README.md` |
 | Provider resilience | Model failover, provider cooldowns, usage accounting, and bounded retries are implemented for the supported routed paths. | `src/model-failover.mjs`, `src/provider-cooldown.mjs`, `src/provider-usage.mjs`, `test/model-failover.test.mjs`, `test/model-failover-router.test.mjs` |
 | Tools and images | Capability metadata gates tool/vision handling. The vision bridge can use a configured cloud or local engine; it does not make an unsupported model support images. | `src/vision-bridge.mjs`, `src/vision-bridge-state.mjs`, `test/vision-bridge.test.mjs`, `test/vision-bridge-e2e.test.mjs`, `README.md` |
 | Web search | Native Codex standalone search and provider-specific hosted search are preserved where the selected route supports them. There is no provider-agnostic search sidecar. | `src/config-manager.mjs`, `src/grok-oauth-forwarder.mjs`, `src/catalog.mjs`, `docs/HOW-IT-WORKS.md` |
@@ -52,7 +53,7 @@ their code, focused tests, and supported client behavior land on `main`.
 | --- | --- | --- |
 | P01 | Provider-neutral credential primitives and migration, using the existing protected-file boundary. | Schema and migration tests, redaction tests, rollback, permissions, and a doctor run with existing credentials. |
 | P02 | Provider-scoped API-key pools with explicit selection, health, cooldown, and rotation policy. | Two-key fixture, 401/403/429/5xx handling, streaming commit boundary, concurrent selection, and no secret leakage. |
-| P03 | Native ChatGPT account switching or pooling, only after the native profile and catalog ownership rules are settled. | Isolated profiles, identity binding, closed-app switching, rollback, restart persistence, usage identity, and native catalog regression tests. |
+| P03 | Native ChatGPT account pooling/rotation and account-scoped usage/catalog policy beyond the shipped explicit manual switcher. | Multi-account usage identity, per-account native catalog refresh, rotation policy, concurrency/active-turn boundaries, quota behavior, rollback, and no implicit account fallback. |
 | P04 | Generic OpenAI-compatible provider definitions above the current checked-in/custom model paths. | Provider CRUD, base URL and header validation, private-network policy, discovery, restart persistence, and legacy custom-model regression. |
 | P05 | Additional OpenAI-compatible endpoints such as legacy completions, embeddings, media, moderation, files, and long-running jobs. | Per-endpoint capability gates, limits, cancellation, idempotency, and non-idempotent retry tests. |
 | P06 | Named virtual models and explicit weighted/failover combinations. | Weight and failover behavior, capability checks, sticky-session semantics, stream commit boundary, and catalog regression tests. |
@@ -66,6 +67,12 @@ their code, focused tests, and supported client behavior land on `main`.
 The IDs are planning labels only. They are not pull-request numbers and must
 not be marked complete from a branch or draft PR. A proposal moves to shipped
 only after it is merged to `main` and its evidence is reproducible there.
+
+The explicit **manual native-account switcher is shipped behavior** and is
+documented in
+`docs/LOCAL-PATCH-CONTROL-CENTER-CODEX-ACCOUNT-SWITCHER-2026-09-20.md`.
+P03 now covers only the broader account-pool/rotation and account-scoped
+usage/catalog work that remains intentionally unimplemented.
 
 ## Invariants for future changes
 

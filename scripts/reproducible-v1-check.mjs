@@ -18,6 +18,8 @@ const readme = read("README.md");
 const installPs1 = read("install.ps1");
 const installSh = read("install.sh");
 const updater = read("src/update.mjs");
+const accountProfiles = read("apps/control-center/electron/codex-account-profiles.mjs");
+const settingsPage = read("apps/control-center/src/pages/SettingsPage.tsx");
 const chatgptWeb = read("apps/control-center/electron/codex-chatgpt-web.mjs");
 const autoResume = read("apps/control-center/electron/codex-auto-resume.mjs");
 const provider = JSON.parse(read("config/chatgpt-web/chatgpt-web.json"));
@@ -80,6 +82,28 @@ check(
     "destineylu/codex-router",
     "CODEX_ROUTER_UPDATE_BRANCH",
   ]),
+);
+check(
+  "Native ChatGPT account profiles remain reproducible and Router-independent",
+  includesAll(accountProfiles, [
+    "startCodexAccountBrowserLogin",
+    "submitCodexAccountCallback",
+    "startCodexAccountDeviceLogin",
+    "switchCodexAccount",
+    "routerRestartRequired: false",
+    "configMutationRequired: false",
+    "isWindowsCodexDesktopExecutable",
+  ]) &&
+    includesAll(settingsPage, [
+      "ChatGPT 原生账号",
+      "浏览器 OAuth / 无痕登录（推荐）",
+      "提交回调 URL",
+      "Router 始终保持运行",
+    ]) &&
+    includesAll(readme, [
+      "第 3.5 步：原生 GPT 多账号切换",
+      "不会停止或重启 Router 4202/4203",
+    ]),
 );
 check(
   "ChatGPT Web stays pinned to audited v5.0.8 and loopback 17841",
@@ -154,6 +178,8 @@ const releaseSensitive = [
   ["install.sh", installSh],
   ["src/update.mjs", updater],
   ["apps/control-center/electron/ipc.mjs", read("apps/control-center/electron/ipc.mjs")],
+  ["apps/control-center/electron/codex-account-profiles.mjs", accountProfiles],
+  ["apps/control-center/src/pages/SettingsPage.tsx", settingsPage],
   ["apps/control-center/electron/codex-chatgpt-web.mjs", chatgptWeb],
   ["apps/control-center/electron/codex-auto-resume.mjs", autoResume],
   ["docs/REPRODUCIBLE-V1.md", reproducibleDoc],

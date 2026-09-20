@@ -888,6 +888,51 @@ export interface CodexChatGptWebSnapshot {
   report?: string;
 }
 
+export interface CodexAccountProfile {
+  id: string;
+  label: string;
+  active: boolean;
+  markedActive: boolean;
+  liveMatches: boolean;
+  usable: boolean;
+  expired: boolean;
+  refreshRequired?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  identityFingerprint?: string;
+  expiresInHours?: number;
+}
+
+export interface CodexAccountLoginSession {
+  id: string;
+  label: string;
+  mode: "browser" | "device";
+  status: "starting" | "waiting" | "completed" | "failed" | "cancelled";
+  startedAt: string;
+  authorizationUrl?: string;
+  callbackSubmittedAt?: string;
+  verificationUrl?: string;
+  userCode?: string;
+  error?: string;
+  report?: string;
+}
+
+export interface CodexAccountProfilesSnapshot {
+  supported: boolean;
+  root: string;
+  profiles: CodexAccountProfile[];
+  loginSession?: CodexAccountLoginSession;
+  activeAccountId?: string;
+  markedActiveAccountId?: string;
+  liveAuthPresent: boolean;
+  liveManaged: boolean;
+  desktopRunning: boolean;
+  routerRestartRequired: false;
+  configMutationRequired: false;
+  why?: string;
+  report?: string;
+}
+
 export interface RouterControlApi {
   readonly platform: string;
   minimizeWindow(): Promise<unknown>;
@@ -922,6 +967,7 @@ export interface RouterControlApi {
   getCodexAgentMode(): Promise<CodexAgentModeSnapshot>;
   getCodexAutoResume(): Promise<CodexAutoResumeSnapshot>;
   getCodexChatGptWeb(): Promise<CodexChatGptWebSnapshot>;
+  getCodexAccounts(): Promise<CodexAccountProfilesSnapshot>;
   getContextSessions(): Promise<ContextSessionsSnapshot>;
   refreshAll(): Promise<unknown>;
   setProviderEnabled(provider: string, enabled: boolean): Promise<unknown>;
@@ -974,6 +1020,14 @@ export interface RouterControlApi {
   setCodexAgentMode(mode: CodexAgentMode): Promise<CodexAgentModeSnapshot>;
   controlCodexAutoResume(action: CodexAutoResumeAction): Promise<CodexAutoResumeSnapshot>;
   controlCodexChatGptWeb(action: CodexChatGptWebAction): Promise<CodexChatGptWebSnapshot>;
+  addCodexAccount(label: string): Promise<CodexAccountProfilesSnapshot>;
+  startCodexAccountBrowserLogin(label: string): Promise<CodexAccountProfilesSnapshot>;
+  startCodexAccountDeviceLogin(label: string): Promise<CodexAccountProfilesSnapshot>;
+  submitCodexAccountCallback(callbackUrl: string): Promise<CodexAccountProfilesSnapshot>;
+  cancelCodexAccountLogin(): Promise<CodexAccountProfilesSnapshot>;
+  renameCodexAccount(id: string, label: string): Promise<CodexAccountProfilesSnapshot>;
+  switchCodexAccount(id: string): Promise<CodexAccountProfilesSnapshot>;
+  deleteCodexAccount(id: string): Promise<CodexAccountProfilesSnapshot>;
   setCodexContextMode(mode: "light" | "full"): Promise<CodexSkillControlSnapshot>;
   setCodexSkillException(skillName: string, enabled: boolean): Promise<CodexSkillControlSnapshot>;
   launchHarness(harnessId: HarnessId, surface: HarnessSurface): Promise<unknown>;

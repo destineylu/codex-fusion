@@ -281,6 +281,43 @@ Control Center → Settings → Codex Auto Resume
 
 Status 页另有只读状态卡。**当前已经有设置入口，不需要新增。**
 
+### ChatGPT 原生账号切换（2026-09-20 增补）
+
+路径：
+
+```text
+Control Center → Settings → ChatGPT 原生账号
+```
+
+这是 Codex Native GPT 登录身份管理，不是 ChatGPT Web，也不是 Provider fallback。当前本地补丁支持添加、重命名、手动切换、删除非当前账号；添加账号始终使用隔离 `CODEX_HOME`。主流程调用官方 `codex login`，允许把同一授权 URL 复制到 Chrome 无痕窗口；如果最终 localhost callback 无法自动送达，可把完整 `http://localhost:<port>/auth/callback?code=...&state=...` 粘贴回 Control Center，由 Center 直接转交给仍在等待的官方 Codex listener。官方 `codex login --device-auth` 仅作为备用。
+
+升级时必须保留以下硬规则：
+
+- **账号切换不得停止或重启 Router 4202/4203；**
+- 切换只替换 live `%USERPROFILE%\.codex\auth.json`；
+- 不修改 `config.toml`、`model_provider`、catalog、picker 或第三方 Provider；
+- ChatGPT Web 的 shadow `CODEX_HOME` 保持隔离；
+- 第一版只允许显式手动切换，不增加额度耗尽自动切号或账号池轮换；
+- 切换前要求 Codex Desktop 完全退出；切换后只重新打开 Codex Desktop；
+- 必须保留 browser OAuth 的非阻塞登录会话、手工 localhost callback 提交、严格 host/path/port/code/state 校验、每秒状态刷新与显式取消能力；
+- callback 只允许转交给本机 loopback listener，Control Center 不自行实现 OpenAI token exchange，OAuth code 不进入持久日志；
+- 必须保留 device-auth 备用流程及验证 URL/一次性代码展示；不得退回“只等待隐藏 `codex login` 子进程结束”的实现。
+
+重点保留：
+
+- `apps/control-center/electron/codex-account-profiles.mjs`
+- `apps/control-center/electron/ipc.mjs`
+- `apps/control-center/electron/preload.cjs`
+- `apps/control-center/src/pages/SettingsPage.tsx`
+- `apps/control-center/src/styles.css`
+- `apps/control-center/src/types.ts`
+- `apps/control-center/electron/api.d.ts`
+- 对应 Electron / renderer tests
+
+详细记录：
+
+`docs/LOCAL-PATCH-CONTROL-CENTER-CODEX-ACCOUNT-SWITCHER-2026-09-20.md`
+
 ## 7. 升级 Router 时的正确顺序
 
 1. 先读本文件及两份 LOCAL-PATCH 文档。
@@ -293,6 +330,7 @@ Status 页另有只读状态卡。**当前已经有设置入口，不需要新�
    - ChatGPT Web managed isolation；
    - Tray-managed login recovery；
    - Auto Resume fixed actions / reset-credit safe default；
+   - Native ChatGPT account profiles / manual switching，且 Router lifecycle 保持不变；
    - Control Center Settings / Status；
    - Single / Team 等既有本地补丁。
 6. `npm --prefix apps/control-center run check`。

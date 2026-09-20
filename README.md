@@ -11,7 +11,7 @@ For v1 compatibility, the routing engine is still named **Codex Router** interna
 | 组件 | 作用 | 是否必须 |
 | --- | --- | --- |
 | Codex Router（核心模块） | 让 Codex 使用 DeepSeek、Claude、GLM、Kimi、xKiro、Command Code、OpenRouter 等外部模型 | 必须 |
-| Control Center | 图形化管理 Provider、模型、Usage、Settings、ChatGPT Web、Auto Resume | Windows 推荐安装 |
+| Control Center | 图形化管理 Provider、模型、Usage、原生 GPT 多账号、Settings、ChatGPT Web、Auto Resume | Windows 推荐安装 |
 | ChatGPT Web Bridge | 把你自己的 ChatGPT Web 账户作为 Codex 模型使用，不走普通模型 API | 可选 |
 | Codex Native2 Full Harness | 让 ChatGPT Web 模型继续使用当前 Codex 的本地工具、命令、补丁等能力 | 可选，高级 |
 | Codex Auto Resume | 原生 Codex 因额度用尽停止后，在额度恢复时继续原 thread | 可选 |
@@ -192,6 +192,32 @@ cd "$env:LOCALAPPDATA\codex-router"
 - `xkiro` 与 `xkiro2` 是两个独立账户/凭据槽，不会自动共享 Key。
 
 遇到 401/403 时先检查 Provider 官网的套餐和模型权限，不要反复重装 Router。
+
+### 第 3.5 步：原生 GPT 多账号切换（Windows Codex Desktop）
+
+安装带 `-WithTray` 的 Codex Fusion 后，这项功能已经包含在 Control Center 中，不需要再安装额外的账号切换工具。打开：
+
+```text
+Control Center
+→ Settings
+→ ChatGPT 原生账号
+```
+
+点击 **+ 添加 ChatGPT 账号** 时，Control Center 会先把当前 live Codex 登录保存成独立 Profile，再在隔离 `CODEX_HOME` 中调用官方 `codex login` 添加另一个账号。Control Center 不要求输入 ChatGPT 密码，也不会把 OAuth token 写进命令行参数、日志或 Git。
+
+如果常用 Chrome 已经登录账号 A，可以把本次官方 OAuth 授权地址复制到 Chrome 无痕窗口登录账号 B。若最后浏览器停在：
+
+```text
+http://localhost:<port>/auth/callback?code=...&state=...
+```
+
+但 localhost 页面无法访问，把地址栏中的**完整 URL**粘贴回 Control Center 的 **Codex OAuth 回调 URL**，再点击 **提交回调 URL**。Control Center 只校验 loopback host、callback path、端口、`code` 和 `state`，然后把回调转交给仍在等待的官方 Codex 登录进程；它不会自行实现 OpenAI token exchange。官方 `codex login --device-auth` 也保留为备用入口。
+
+真正切换账号前，先完成当前 Codex turn 并**完全退出 Codex Desktop**，然后在目标 Profile 上点击 **切换**，再重新打开 Codex Desktop。切换过程会同步当前账号最新 auth、写入回滚备份、原子替换 live `auth.json` 并验证目标身份。
+
+**账号切换不会停止或重启 Router 4202/4203，也不会修改 `config.toml`、模型 catalog、第三方 Provider 或 ChatGPT Web Bridge。** 当前版本只做手动显式切换，不做额度耗尽自动换号、账号池轮换或隐式 fallback。
+
+Windows 上 Codex CLI / `app-server` 也可能叫 `Codex.exe`，所以 Control Center 按真实 Desktop 可执行路径判断是否仍有 Codex Desktop 在运行，不会把 npm CLI 或 AppX `resources\codex.exe` 错判成 Desktop。
 
 ### 第 4 步：安装 ChatGPT Web Bridge（Browser-only 先跑通）
 
@@ -640,6 +666,7 @@ npm run release:verify
 | `git` / `node` 找不到 | PATH 没刷新 | 关闭 PowerShell，重新打开，再查版本 |
 | Router 安装完成但 Control Center 没出现 | Tray 构建/注册失败 | PowerShell 执行 `cd "$env:LOCALAPPDATA\codex-router"`，再运行 `.\codex-router.ps1 tray install` |
 | API Key 保存了仍 401/403 | Provider 套餐/模型 entitlement | 去 Provider 官网确认套餐，不要重装 Router |
+| 原生 GPT 账号切换提示 Codex 未退出 | 先确认是真实 Codex Desktop，而不是 npm `codex.exe app-server` | 新版 Control Center 已按可执行路径区分；升级后仍异常时先运行 `release:verify` 并确认 Control Center 已更新 |
 | ChatGPT Web `Managed Start` 按钮不可用 | `Codex route owner` 不是 Router | 先 `doctor`/repair Router，禁止直连 17841 |
 | Managed browser 打开但一直 `Sign in required` | 只在普通 Chrome 登录了 | 必须在 Managed Start 打开的 Codex Web GPT 窗口内登录 |
 | `Start 17841` 不可点 | Browser smoke 未通过 | 回 managed launcher 完成 Browser smoke test |
@@ -663,6 +690,9 @@ npm run release:verify
 [ ] Router service running
 [ ] doctor 没有关键失败
 [ ] Control Center 能打开
+[ ] Settings 中存在“ChatGPT 原生账号”（Windows Codex Desktop）
+[ ] 添加第二账号不会立即替换当前 live 账号
+[ ] 退出 Codex Desktop 后可以显式切换 Profile，Router PID 不变
 [ ] Codex route owner = Router
 [ ] 普通 API Provider（如有）已连接并能看到模型
 [ ] ChatGPT Web launcher = Installed（如使用）

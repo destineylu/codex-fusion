@@ -54,6 +54,32 @@ sessions are intentionally not stored in Git.
 
 The following integrations are shipped as guarded optional components:
 
+### Native ChatGPT account profiles
+
+Windows Codex Desktop installs with the Electron Control Center include the
+checked-in native-account profile manager. The feature is local-only and never
+ships another operator's credentials or browser state.
+
+- profiles live under the current user's Codex Router state, not in Git;
+- adding an account invokes the official Codex OAuth flow inside an isolated
+  `CODEX_HOME`;
+- an incognito/alternate-account browser can return a complete localhost
+  callback URL to Control Center when automatic loopback navigation fails;
+- callback relay accepts only the expected loopback host/path/port and matching
+  OAuth state, and the official Codex process still performs the token exchange;
+- official `codex login --device-auth` remains available as a fallback;
+- switching requires Codex Desktop to be closed, synchronizes refreshed auth,
+  writes a rollback copy, atomically replaces live `auth.json`, and verifies
+  the target identity;
+- switching does not restart Router, does not rewrite `config.toml` or model
+  catalogs, and does not modify ChatGPT Web or third-party provider state;
+- automatic account rotation, quota-triggered switching, and account fallback
+  are intentionally not part of reproducible v1.
+
+Windows Desktop detection is executable-path-aware because Codex Desktop, npm
+Codex CLI/app-server, and AppX resource CLIs may all present as `Codex.exe`.
+Only recognized Desktop install roots block an account switch.
+
 ### ChatGPT Web
 
 - upstream: `miuuyy/codex-chatgpt-web`
