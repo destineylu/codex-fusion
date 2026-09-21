@@ -32,8 +32,11 @@ import {
   setCodexSkillException,
 } from "./codex-skill-control.mjs";
 import {
+  bindCodexAutoResumeThreadToCurrentAccount,
   controlCodexAutoResume,
   getCodexAutoResumeSnapshot,
+  pauseCodexAutoResumeForAccountSwitch,
+  restoreCodexAutoResumeAfterAccountSwitch,
 } from "./codex-auto-resume.mjs";
 import {
   controlCodexChatGptWeb,
@@ -1205,6 +1208,9 @@ export function registerIpcHandlers({
   handleAction("controlCodexAutoResume", async ({ action } = {}) => {
     return controlCodexAutoResume(oneOf(action, CODEX_AUTO_RESUME_ACTIONS, "Codex auto-resume action"));
   }, { requiresCompatibleRouter: false });
+  handleAction("bindCodexAutoResumeThread", async ({ threadId } = {}) => {
+    return bindCodexAutoResumeThreadToCurrentAccount(stringValue(threadId, "Codex thread id"));
+  }, { requiresCompatibleRouter: false });
   handleAction("controlCodexChatGptWeb", async ({ action } = {}) => {
     return controlCodexChatGptWeb(oneOf(action, CODEX_CHATGPT_WEB_ACTIONS, "Codex ChatGPT Web action"));
   }, { requiresCompatibleRouter: false });
@@ -1227,7 +1233,40 @@ export function registerIpcHandlers({
     return renameCodexAccount(stringValue(id, "Account id"), stringValue(label, "Account name"));
   }, { requiresCompatibleRouter: false });
   handleAction("switchCodexAccount", async ({ id } = {}) => {
-    return switchCodexAccount(stringValue(id, "Account id"));
+    const targetId = stringValue(id, "Account id");
+    const continuation = pauseCodexAutoResumeForAccountSwitch();
+    let result;
+    try {
+      result = switchCodexAccount(targetId);
+    } catch (error) {
+      try {
+        restoreCodexAutoResumeAfterAccountSwitch(continuation);
+      } catch {
+        // Preserve the auth-switch failure. The watcher is allowed to remain
+        // stopped rather than obscuring the original account transaction error.
+      }
+      throw error;
+    }
+
+    try {
+      const autoResume = restoreCodexAutoResumeAfterAccountSwitch(continuation);
+      return {
+        ...result,
+        report: [result.report, autoResume.report].filter(Boolean).join(" "),
+      };
+    } catch (error) {
+      // The auth transaction already committed and must not be reported as if
+      // it rolled back. Auto Resume remains fail-closed/stopped until the user
+      // runs doctor/dry-run or re-enables it.
+      const detail = error instanceof Error ? error.message : "Auto Resume could not be restored.";
+      return {
+        ...result,
+        report: [
+          result.report,
+          `Auto Resume was not restored after the account switch: ${cleanText(detail, "unknown error", 600)}. It remains stopped; run doctor/dry-run before enabling it again.`,
+        ].filter(Boolean).join(" "),
+      };
+    }
   }, { requiresCompatibleRouter: false });
   handleAction("deleteCodexAccount", async ({ id } = {}) => {
     return deleteCodexAccount(stringValue(id, "Account id"));

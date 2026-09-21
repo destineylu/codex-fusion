@@ -190,10 +190,33 @@ final routed compatibility through 4202
 
 升级或重装后必须重新确认 `auto_redeem_weekly_reset=false`，不得因为上游默认值而恢复自动消耗 reset credit。
 
+2026-09-21 增加的 Native Account Guard 也属于升级必须保留的本地安全层：
+
+```text
+Native Profile identityFingerprint
+→ 每账号独立 Auto Resume state_dir
+→ thread accountFingerprint binding
+→ mismatch / unbound fail-closed
+```
+
+账号切换的固定顺序是：
+
+```text
+pause watcher
+→ 原生 auth transaction
+→ target account state_dir
+→ restore watcher/autostart
+```
+
+不得把多个 Native 账号重新合并进一个 `last_quota/state.json`；否则账号 A 的“额度已耗尽”和账号 B 的“额度充足”会被误解释为同一账号恢复。无法证明归属的旧 thread 必须保持 UNBOUND，不允许按余额、昵称或 thread 内容猜测。
+
 重点保留：
 
 - `apps/control-center/electron/codex-auto-resume.mjs`
-- Control Center Settings / Status 显示与固定 actions
+- `apps/control-center/electron/codex-account-profiles.mjs` 的 activation history / identity context
+- account-switch IPC 中 Auto Resume pause/scope/restore 事务
+- Control Center Settings / Status 的 account fingerprint / Guarded / thread binding 显示与固定 actions
+- release gate 对 account-aware Auto Resume 的静态检查
 - `docs/LOCAL-PATCH-CONTROL-CENTER-CODEX-AUTO-RESUME-2026-09-17.md`
 
 ## 5. Codex ComfyUI 插件

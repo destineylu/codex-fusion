@@ -327,6 +327,20 @@ export function StatusPage({
           <div className="st-reset-list">
             <article>
               <span>
+                <strong>Native account</strong>
+                <small>{autoResume.accountFingerprint
+                  ? `${autoResume.accountLabel || "Current account"} · ${autoResume.accountFingerprint}`
+                  : "No managed account identity"}</small>
+              </span>
+              <time>
+                <strong>{autoResume.accountGuarded ? "Guarded" : "Unbound"}</strong>
+                <small>{autoResume.unboundThreads || autoResume.mismatchedThreads
+                  ? `${autoResume.unboundThreads || 0} unbound · ${autoResume.mismatchedThreads || 0} other`
+                  : "Thread state matches current account"}</small>
+              </time>
+            </article>
+            <article>
+              <span>
                 <strong>Autostart</strong>
                 <small>External watcher lifecycle</small>
               </span>

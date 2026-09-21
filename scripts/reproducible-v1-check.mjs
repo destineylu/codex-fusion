@@ -143,12 +143,22 @@ check(
   ]),
 );
 check(
-  "Auto Resume remains pinned and weekly reset redemption is conservative",
+  "Auto Resume remains pinned, conservative, and native-account scoped",
   includesAll(autoResume, [
     "1b2dae9d862573adc727b8d273d2760785344351",
     "auto_redeem_weekly_reset",
-    "setAutoRedeemWeeklyReset(false)",
-  ]),
+    "setAutoRedeemWeeklyReset(false, options)",
+    "ACCOUNT_BINDINGS_VERSION",
+    "accountFingerprint",
+    "account-mismatch",
+    "pauseCodexAutoResumeForAccountSwitch",
+    "restoreCodexAutoResumeAfterAccountSwitch",
+  ]) &&
+    includesAll(settingsPage, [
+      "原生账号作用域",
+      "绑定到当前账号",
+      "accountFingerprint",
+    ]),
 );
 check(
   "Reproducible-v1 upgrade contract remains documented",

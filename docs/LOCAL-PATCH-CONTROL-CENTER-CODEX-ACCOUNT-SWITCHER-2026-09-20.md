@@ -51,6 +51,7 @@ Codex Native live auth.json     唯一被切换的 live 身份文件
 native-accounts/
 ├─ accounts.json
 ├─ active-account.json
+├─ switch-history.json
 ├─ last-switch-backup.json
 └─ profiles/
    ├─ <uuid-A>/auth.json
@@ -99,10 +100,12 @@ Control Center
 5. 原子替换 live `%USERPROFILE%\.codex\auth.json`。
 6. 重新读取 live auth，验证身份指纹与目标 Profile 一致。
 7. 验证成功后更新 `active-account.json`。
-8. 若验证失败，恢复切换前备份。
-9. 用户重新打开 Codex Desktop。
+8. 同步更新 `switch-history.json`，只记录 Profile ID、不可逆 identity fingerprint 和激活时间；它与 live auth / active pointer 属于同一事务，失败时一起回滚。
+9. 如果 Auto Resume 已安装：切换前暂停其 watcher；auth transaction 成功后把 sidecar 切到目标账号独立 `state_dir`，再恢复切换前的 watcher/autostart 状态。
+10. 如果 auth 已经成功切换，但 Auto Resume 恢复失败，不得把整个账号切换误报成失败；账号保持目标身份，Auto Resume fail-closed 保持停止，要求 doctor/dry-run 后手动恢复。
+11. 用户重新打开 Codex Desktop。
 
-这里**不包含 Router lifecycle 操作**。
+这里**不包含 Router lifecycle 操作**。Auto Resume 联动只影响其自己的 watcher/state，不允许 stop/restart Router。
 
 ## 6. 与 ChatGPT Web 的边界
 
@@ -113,6 +116,8 @@ ChatGPT Web Bridge 继续使用自己的：
 ```
 
 Native 账号切换不得读取、复制或改写该 shadow CODEX_HOME。两个登录体系保持完全隔离。
+
+Auto Resume 与 Native Profile Manager 可以共享**不可逆 identity fingerprint 作为作用域标识**，但不得共享 token。每个 Native 账号的 Auto Resume quota/thread state 独立；这不构成自动账号轮换，切号仍必须由用户显式操作。
 
 ## 7. 代码位置
 
@@ -150,6 +155,9 @@ Native 账号切换不得读取、复制或改写该 shadow CODEX_HOME。两个�
 7. UI 明示“Router 始终保持运行”，且不提供自动切号开关。
 8. access token 已过期但仍有 refresh token 的备用 Profile 仍可切换，等待官方 Codex 刷新。
 9. Control Center typecheck、Electron syntax、renderer tests 通过。
+10. Auto Resume 已运行/自启时，账号切换会先停 watcher，切换后在目标 fingerprint 的独立 state 下恢复；Router PID 不变。
+11. A/B 两账号的 quota / tracked thread state 不共享；A thread 在 B 账号作用域下必须被 blocked，未知 legacy thread 必须保持 UNBOUND。
+12. auth 切换成功但 Auto Resume 恢复失败时，UI 必须报告“账号已切换、Auto Resume 停止”，不能暗示 auth 已回滚。
 
 真实双账号 OAuth 与最终 A→B 切换已经完成本机人工验收：只退出并重开 Codex Desktop，Router 全程保持运行。
 
@@ -357,3 +365,44 @@ targetProfile.liveMatches = true
 ```
 
 检测修复部署前后，Router 4202 / 4203 的 PID 哨兵保持不变；真实 A → B 切换本身没有触发 Router 重启。
+
+## 12. 2026-09-21 Auto Resume 多账号联动
+
+Native Profile Manager 现在额外提供不可逆账号 identity context 和 activation history，供 Auto Resume 做账号作用域，不向 sidecar暴露 token。
+
+切换事务增加：
+
+```text
+pause Auto Resume watcher
+→ Native auth switch transaction
+→ target accountFingerprint state_dir
+→ restore prior watcher/autostart state
+```
+
+关键语义：
+
+- Router 仍不重启；
+- ChatGPT Web 不参与；
+- 不自动选账号、不按 quota 自动切号；
+- A/B 账号的 Auto Resume quota/thread state 完全分开；
+- auth 已成功切换但 watcher 恢复失败时，账号切换仍报告成功，Auto Resume fail-closed 保持停止；
+- 单账号用户未建立 saved Profile 时，也允许使用 live auth 的不可逆 fingerprint 作为 Auto Resume scope，但不会自动认领无法证明归属的 legacy thread。
+
+新增回归后 Control Center tests 为：
+
+```text
+84 total
+82 PASS
+2 platform SKIP
+0 FAIL
+```
+
+`release:verify` 为：
+
+```text
+16/16 reproducibility checks
+119 tests
+114 PASS
+5 SKIP
+0 FAIL
+```

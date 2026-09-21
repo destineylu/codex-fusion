@@ -360,6 +360,22 @@ Windows 下 Codex Desktop、npm CLI、app-server 都可能出现 Codex.exe，因
 
 当前版本刻意不做额度耗尽自动换号、账号池轮换和账号 fallback。
 
+### Settings：Auto Resume 原生账号隔离
+
+Auto Resume 仍然是独立 sidecar，只负责原生 Codex quota 恢复后继续原 thread，不参与 Router 路由、failover、compact 或 subagent。2026-09-21 起，Control Center 使用 Native Profile 的不可逆 `accountFingerprint` 给 Auto Resume 增加账号作用域：
+
+~~~text
+账号 A
+→ 独立 state_dir / quota / tracked threads
+
+账号 B
+→ 独立 state_dir / quota / tracked threads
+~~~
+
+thread 绑定到其他账号时标记为 `account-mismatch` 并禁止自动续跑；无法可靠判断归属的旧 thread 保持 `UNBOUND`，只能由用户显式绑定到当前账号。显式切换 Native 账号时，Control Center 会暂停 watcher、完成 auth transaction、切换到目标账号 state，再恢复 watcher；Router 4202/4203 不重启。
+
+这项能力的目的只是**防止不同 Native 账号之间错误继承额度和 thread 状态**，不是自动账号池，也不会在额度耗尽时替用户换号。
+
 ### Skills / Harness
 
 包含：

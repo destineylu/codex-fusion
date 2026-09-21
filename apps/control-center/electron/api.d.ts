@@ -113,6 +113,9 @@ export interface CodexAutoResumeThread {
   status: string;
   resumes: number;
   lastError?: string;
+  accountFingerprint?: string;
+  accountLabel?: string;
+  accountBinding?: "current" | "other" | "unbound";
 }
 
 export interface CodexAutoResumeSnapshot {
@@ -126,6 +129,11 @@ export interface CodexAutoResumeSnapshot {
   autostart: boolean;
   enabled?: boolean;
   autoRedeemWeeklyReset?: boolean;
+  accountFingerprint?: string;
+  accountLabel?: string;
+  accountGuarded?: boolean;
+  unboundThreads?: number;
+  mismatchedThreads?: number;
   lastStatus?: string;
   lastCheckedAt?: number;
   trackedThreads: number;
@@ -280,6 +288,7 @@ export interface RouterControl {
   controlTray(action: TrayAction): Promise<unknown>;
   setCodexAgentMode(mode: CodexAgentMode): Promise<CodexAgentModeSnapshot>;
   controlCodexAutoResume(action: CodexAutoResumeAction): Promise<CodexAutoResumeSnapshot>;
+  bindCodexAutoResumeThread(threadId: string): Promise<CodexAutoResumeSnapshot>;
   controlCodexChatGptWeb(action: CodexChatGptWebAction): Promise<CodexChatGptWebSnapshot>;
   addCodexAccount(label: string): Promise<CodexAccountProfilesSnapshot>;
   startCodexAccountBrowserLogin(label: string): Promise<CodexAccountProfilesSnapshot>;

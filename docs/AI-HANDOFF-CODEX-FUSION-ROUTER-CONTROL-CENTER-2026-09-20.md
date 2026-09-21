@@ -469,14 +469,24 @@ Control Center Usage 分层显示官方计划、5h/weekly、local usage value、
 
 ---
 
-## 12. Codex Auto Resume：只负责 quota 恢复续跑
+## 12. Codex Auto Resume：只负责 quota 恢复续跑，但必须按 Native 账号隔离
 
 Auto Resume 的职责：
 
 ```text
-原生 Codex quota 恢复
-→ 继续原 thread
+当前 Native ChatGPT 账号 quota 恢复
+→ 只继续绑定到同一 accountFingerprint 的原 thread
 ```
+
+2026-09-21 起，Control Center 在固定审计版 sidecar 外增加 **Native Account Guard**：
+
+- Native Profile 的不可逆 `identityFingerprint` 是账号作用域锚点；
+- 每个账号使用独立 Auto Resume `state_dir`，不得共享 `last_quota`、handled mark、resume count；
+- thread 必须有 `accountFingerprint`；其他账号 thread = `account-mismatch`，未知 legacy thread = `UNBOUND`，两者默认 disabled；
+- 账号切换顺序必须保持：`pause watcher → auth transaction → target account state_dir → restore watcher`；
+- 如果 auth 已成功切换、但 watcher 恢复失败，账号切换仍然算成功；Auto Resume 必须 fail-closed 保持停止，并提示 doctor/dry-run 后再启用；
+- 不能根据余额、账号昵称、thread 内容猜 legacy thread 的账号归属；
+- 不能把“多账号隔离”改成额度耗尽自动换号。账号切换仍只能由用户显式发起。
 
 它不参与：
 - model fallback；
@@ -488,7 +498,10 @@ Auto Resume 的职责：
 安全默认：
 `auto_redeem_weekly_reset=false`
 
-升级后必须确认没有因 upstream 默认值恢复成自动消耗 reset credit。
+升级后必须确认账号隔离仍在，并确认没有因 upstream 默认值恢复成自动消耗 reset credit。
+
+专项文档：
+`docs/LOCAL-PATCH-CONTROL-CENTER-CODEX-AUTO-RESUME-2026-09-17.md`
 
 ---
 

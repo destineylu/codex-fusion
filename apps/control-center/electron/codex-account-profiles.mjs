@@ -17,6 +17,8 @@ import path from "node:path";
 
 const MANIFEST_VERSION = 1;
 const ACTIVE_VERSION = 1;
+const SWITCH_HISTORY_VERSION = 1;
+const SWITCH_HISTORY_LIMIT = 256;
 const LABEL_MAX_LENGTH = 64;
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 const DEVICE_LOGIN_TIMEOUT_MS = 15 * 60_000;
@@ -172,6 +174,7 @@ function accountPaths(options = {}) {
     profilesDir: path.join(root, "profiles"),
     manifest: path.join(root, "accounts.json"),
     active: path.join(root, "active-account.json"),
+    history: path.join(root, "switch-history.json"),
     rollback: path.join(root, "last-switch-backup.json"),
     liveAuth: path.join(codexHome(options), "auth.json"),
   };
@@ -217,12 +220,85 @@ function saveManifest(paths, manifest, options) {
   return writePrivateJson(paths.manifest, manifest, options);
 }
 
+function readSwitchHistory(paths) {
+  const value = readJsonObject(paths.history);
+  const rows = value?.version === SWITCH_HISTORY_VERSION && Array.isArray(value.activations)
+    ? value.activations
+    : [];
+  return {
+    version: SWITCH_HISTORY_VERSION,
+    activations: rows
+      .filter((row) => (
+        row
+        && UUID.test(String(row.profileId || ""))
+        && /^[a-f0-9]{12}$/i.test(String(row.accountFingerprint || ""))
+        && Number.isFinite(Date.parse(String(row.activatedAt || "")))
+      ))
+      .map((row) => ({
+        profileId: row.profileId,
+        accountFingerprint: String(row.accountFingerprint).toLowerCase(),
+        activatedAt: new Date(Date.parse(row.activatedAt)).toISOString(),
+      }))
+      .sort((left, right) => Date.parse(left.activatedAt) - Date.parse(right.activatedAt)),
+  };
+}
+
+function profileFingerprint(paths, id) {
+  const auth = readAuth(profileAuth(paths.root, id));
+  return auth?.identityFingerprint;
+}
+
+function appendActivation(history, activation) {
+  if (!activation?.profileId || !activation?.accountFingerprint || !activation?.activatedAt) return history;
+  const previous = history.activations.at(-1);
+  if (
+    previous
+    && previous.profileId === activation.profileId
+    && previous.accountFingerprint === activation.accountFingerprint
+  ) {
+    return history;
+  }
+  return {
+    version: SWITCH_HISTORY_VERSION,
+    activations: [...history.activations, activation].slice(-SWITCH_HISTORY_LIMIT),
+  };
+}
+
 function saveActive(paths, id, options) {
-  return writePrivateJson(paths.active, {
+  const previous = readActive(paths);
+  let history = readSwitchHistory(paths);
+
+  if (previous?.id && previous.switchedAt) {
+    const previousFingerprint = profileFingerprint(paths, previous.id);
+    if (previousFingerprint) {
+      history = appendActivation(history, {
+        profileId: previous.id,
+        accountFingerprint: previousFingerprint,
+        activatedAt: previous.switchedAt,
+      });
+    }
+  }
+
+  const sameProfile = previous?.id === id;
+  const switchedAt = sameProfile && previous?.switchedAt
+    ? previous.switchedAt
+    : new Date().toISOString();
+  const result = writePrivateJson(paths.active, {
     version: ACTIVE_VERSION,
     id,
-    switchedAt: new Date().toISOString(),
+    switchedAt,
   }, options);
+
+  const targetFingerprint = profileFingerprint(paths, id);
+  if (targetFingerprint) {
+    history = appendActivation(history, {
+      profileId: id,
+      accountFingerprint: targetFingerprint,
+      activatedAt: switchedAt,
+    });
+    writePrivateJson(paths.history, history, options);
+  }
+  return result;
 }
 
 function updateProfileMetadata(manifest, id, auth) {
@@ -908,6 +984,54 @@ function syncActiveProfile(paths, manifest, options) {
   return { manifest: nextManifest, active };
 }
 
+export function getCodexAccountIdentityContext(options = {}) {
+  const paths = accountPaths(options);
+  const manifest = readManifest(paths);
+  const active = readActive(paths);
+  const liveAuth = readAuth(paths.liveAuth);
+  const profiles = manifest.profiles.map((row) => profileStatus(paths, row, active, liveAuth));
+  const activeProfile = profiles.find((row) => row.active);
+  const history = readSwitchHistory(paths);
+  const activations = [...history.activations];
+
+  if (activeProfile?.identityFingerprint && active?.switchedAt) {
+    const synthetic = {
+      profileId: activeProfile.id,
+      accountFingerprint: activeProfile.identityFingerprint.toLowerCase(),
+      activatedAt: active.switchedAt,
+    };
+    const last = activations.at(-1);
+    if (
+      !last
+      || last.profileId !== synthetic.profileId
+      || last.accountFingerprint !== synthetic.accountFingerprint
+    ) {
+      activations.push(synthetic);
+    }
+  }
+
+  return {
+    activeProfileId: activeProfile?.id,
+    // Auto Resume can safely scope a single unmanaged native login by the same
+    // irreversible account fingerprint without copying credentials into a
+    // Profile. Multi-account switching still requires managed Profiles.
+    activeAccountFingerprint: (
+      activeProfile?.identityFingerprint
+      || liveAuth?.identityFingerprint
+    )?.toLowerCase(),
+    activeSince: activeProfile ? active?.switchedAt : undefined,
+    profiles: profiles.map((profile) => ({
+      id: profile.id,
+      label: profile.label,
+      identityFingerprint: profile.identityFingerprint?.toLowerCase(),
+      active: profile.active,
+    })),
+    activations: activations
+      .filter((entry) => Number.isFinite(Date.parse(entry.activatedAt)))
+      .sort((left, right) => Date.parse(left.activatedAt) - Date.parse(right.activatedAt)),
+  };
+}
+
 export function getCodexAccountProfilesSnapshot(options = {}) {
   const paths = accountPaths(options);
   const manifest = readManifest(paths);
@@ -1030,6 +1154,7 @@ export function switchCodexAccount(id, options = {}) {
   }
   const currentAuth = readAuth(paths.liveAuth);
   const activeBeforeBuffer = existsSync(paths.active) ? readFileSync(paths.active) : undefined;
+  const historyBeforeBuffer = existsSync(paths.history) ? readFileSync(paths.history) : undefined;
   if (currentAuth) {
     writePrivateBuffer(paths.rollback, currentAuth.buffer, options);
   } else {
@@ -1056,6 +1181,10 @@ export function switchCodexAccount(id, options = {}) {
     try {
       if (activeBeforeBuffer) writePrivateBuffer(paths.active, activeBeforeBuffer, options);
       else rmSync(paths.active, { force: true });
+    } catch { /* preserve original error */ }
+    try {
+      if (historyBeforeBuffer) writePrivateBuffer(paths.history, historyBeforeBuffer, options);
+      else rmSync(paths.history, { force: true });
     } catch { /* preserve original error */ }
     throw error;
   }

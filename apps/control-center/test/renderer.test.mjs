@@ -164,22 +164,47 @@ const bridgeSource = String.raw`
   let codexTemporarySkills = new Set();
   let codexAutoResumeAutostart = false;
   let codexAutoResumeResetCredit = false;
-  const codexAutoResumeSnapshot = (report) => ({
-    supported: true,
-    installed: true,
-    root: "C:/Users/test/AppData/Local/codex-router-sidecars/codex-auto-resume",
-    stateDir: "C:/Users/test/AppData/Local/vibcoding/codex-auto-resume",
-    repository: "https://github.com/feifeigong/codex-auto-resume.git",
-    version: "0.2.2",
-    running: codexAutoResumeAutostart,
-    autostart: codexAutoResumeAutostart,
-    autoRedeemWeeklyReset: codexAutoResumeResetCredit,
-    lastStatus: "waiting-primary-reset",
-    trackedThreads: 2,
-    activeThreads: 1,
-    threads: [],
-    ...(report ? { report } : {}),
-  });
+  const codexAutoResumeSnapshot = (report) => {
+    const active = codexAccountProfiles?.find?.((profile) => profile.active);
+    return {
+      supported: true,
+      installed: true,
+      root: "C:/Users/test/AppData/Local/codex-router-sidecars/codex-auto-resume",
+      stateDir: "C:/Users/test/AppData/Local/vibcoding/codex-auto-resume/accounts/" + (active?.identityFingerprint || "unbound"),
+      repository: "https://github.com/feifeigong/codex-auto-resume.git",
+      version: "0.2.2",
+      running: codexAutoResumeAutostart,
+      autostart: codexAutoResumeAutostart,
+      autoRedeemWeeklyReset: codexAutoResumeResetCredit,
+      accountFingerprint: active?.identityFingerprint,
+      accountLabel: active?.label,
+      accountGuarded: Boolean(active?.identityFingerprint),
+      unboundThreads: 1,
+      mismatchedThreads: 0,
+      lastStatus: "waiting-primary-reset",
+      trackedThreads: 2,
+      activeThreads: 1,
+      threads: [
+        {
+          threadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          enabled: true,
+          status: "waiting",
+          resumes: 0,
+          accountFingerprint: active?.identityFingerprint,
+          accountLabel: active?.label,
+          accountBinding: "current",
+        },
+        {
+          threadId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          enabled: false,
+          status: "account-unbound",
+          resumes: 0,
+          accountBinding: "unbound",
+        },
+      ],
+      ...(report ? { report } : {}),
+    };
+  };
   const codexChatGptWebSnapshot = (report) => ({
     supported: true,
     installed: true,
@@ -655,6 +680,10 @@ const bridgeSource = String.raw`
       if (action === "enable-reset-credit") codexAutoResumeResetCredit = true;
       if (action === "disable-reset-credit") codexAutoResumeResetCredit = false;
       return codexAutoResumeSnapshot(action === "doctor" ? "app_server OK ok" : action === "dry-run" ? "dry-run waiting=0" : undefined);
+    },
+    bindCodexAutoResumeThread: async (threadId) => {
+      record("bindCodexAutoResumeThread", threadId);
+      return codexAutoResumeSnapshot("Thread bound to current native account.");
     },
     controlCodexChatGptWeb: async (action) => {
       record("controlCodexChatGptWeb", action);
@@ -1353,9 +1382,15 @@ test("Settings exposes Codex Auto Resume as an explicit sidecar with reset-credi
     });
     await autoResumeSection.waitFor();
     assert.equal(await autoResumeSection.getByText("v0.2.2", { exact: false }).count() > 0, true);
+    assert.equal(await autoResumeSection.getByText("主账号 · fingerprint aaaabbbbcccc", { exact: true }).count(), 1);
+    assert.equal(await autoResumeSection.getByText("Guarded", { exact: true }).count(), 1);
     assert.equal(await autoResumeSection.getByText("Reset credit 自动使用已开启", { exact: true }).count(), 0);
     const resetCreditToggle = autoResumeSection.getByRole("checkbox", { name: "Auto redeem weekly reset credit" });
     assert.equal(await resetCreditToggle.isChecked(), false);
+
+    await autoResumeSection.getByRole("button", { name: "绑定到当前账号", exact: true }).click();
+    await page.waitForFunction(() => window.routerControlTest.calls()
+      .some((call) => call.name === "bindCodexAutoResumeThread" && call.args[0] === "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"));
 
     await autoResumeSection.getByRole("button", { name: "Run doctor", exact: true }).click();
     await page.waitForFunction(() => window.routerControlTest.calls()

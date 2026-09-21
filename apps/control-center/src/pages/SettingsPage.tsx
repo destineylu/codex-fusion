@@ -235,6 +235,15 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
       return result;
     });
   };
+  const bindAutoResumeThread = (threadId: string) => {
+    if (!api || typeof api.bindCodexAutoResumeThread !== "function") return;
+    void runAction("Bind Auto Resume thread", async () => {
+      const result = await api.bindCodexAutoResumeThread(threadId);
+      setCodexAutoResume(result);
+      if (result.report) setCodexAutoResumeReport(result.report);
+      return result;
+    });
+  };
   const runCodexChatGptWeb = (action: CodexChatGptWebAction, label: string) => {
     if (!api || typeof api.controlCodexChatGptWeb !== "function") return;
     void runAction(label, async () => {
@@ -249,6 +258,10 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
       const result = await action();
       setCodexAccounts(result);
       if (result.report) setCodexAccountsReport(result.report);
+      if (api && typeof api.getCodexAutoResume === "function") {
+        const autoResume = await api.getCodexAutoResume();
+        setCodexAutoResume(autoResume);
+      }
       return result;
     });
   };
@@ -757,9 +770,50 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
                     <Badge tone={codexAutoResume.autostart ? "success" : "neutral"}>{codexAutoResume.autostart ? "Enabled" : "Disabled"}</Badge>
                   </div>
                   <div className="setting-row static-row">
-                    <div><strong>跟踪线程</strong><small>只显示 sidecar 自己记录的 Codex thread，不与 Router subagent 状态合并。</small></div>
+                    <div>
+                      <strong>原生账号作用域</strong>
+                      <small>{codexAutoResume.accountFingerprint
+                        ? `${codexAutoResume.accountLabel || "当前账号"} · fingerprint ${codexAutoResume.accountFingerprint}`
+                        : "当前 live auth 尚未对应到 Control Center Native Account Profile。"}</small>
+                    </div>
+                    <Badge tone={codexAutoResume.accountGuarded ? "success" : "warning"}>
+                      {codexAutoResume.accountGuarded ? "Guarded" : "Unbound"}
+                    </Badge>
+                  </div>
+                  <div className="setting-row static-row">
+                    <div>
+                      <strong>跟踪线程</strong>
+                      <small>线程按 accountFingerprint 隔离；其他账号或未绑定 thread 默认禁止自动续跑。</small>
+                    </div>
                     <Badge tone="neutral">{codexAutoResume.activeThreads}/{codexAutoResume.trackedThreads}</Badge>
                   </div>
+                  {codexAutoResume.threads.map((thread) => (
+                    <div className="setting-row static-row" key={thread.threadId}>
+                      <div>
+                        <strong>{thread.threadId}</strong>
+                        <small>
+                          {thread.accountBinding === "current"
+                            ? `${thread.accountLabel || "当前账号"} · ${thread.accountFingerprint} · ${thread.status}`
+                            : thread.accountBinding === "other"
+                              ? `${thread.accountLabel || "其他账号"} · ${thread.accountFingerprint} · blocked`
+                              : `UNBOUND · ${thread.status}`}
+                        </small>
+                      </div>
+                      {thread.accountBinding === "unbound" ? (
+                        <Button
+                          variant="secondary"
+                          disabled={!api || !codexAutoResume.accountFingerprint}
+                          onClick={() => bindAutoResumeThread(thread.threadId)}
+                        >
+                          绑定到当前账号
+                        </Button>
+                      ) : (
+                        <Badge tone={thread.accountBinding === "current" ? "success" : "neutral"}>
+                          {thread.accountBinding === "current" ? "Current" : "Blocked"}
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
                   <div className="setting-row">
                     <div>
                       <strong>自动使用 weekly reset credit</strong>
@@ -1130,7 +1184,7 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
         onClose={() => setPendingAccountSwitch(null)}
       >
         <p className="dialog-copy">
-          切换到 <strong>{pendingAccountSwitch?.label}</strong> 前，请完全退出 Codex Desktop。Control Center 会先把当前账号最新 auth 状态同步回其 Profile，再原子替换 live auth.json，并保留回滚备份。Router 4202/4203、第三方模型、ChatGPT Web 和 config.toml 全程保持不动。
+          切换到 <strong>{pendingAccountSwitch?.label}</strong> 前，请完全退出 Codex Desktop。Control Center 会先暂停正在运行的 Auto Resume watcher，再同步当前账号最新 auth、原子替换 live auth.json，并把 Auto Resume 切到目标账号独立的 accountFingerprint/state 后恢复原来的 watcher 状态。Router 4202/4203、第三方模型、ChatGPT Web 和 config.toml 全程保持不动。
         </p>
         <div className="dialog-actions">
           <Button variant="secondary" onClick={() => setPendingAccountSwitch(null)}>取消</Button>

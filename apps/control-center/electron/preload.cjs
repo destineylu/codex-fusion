@@ -69,6 +69,7 @@ const routerControl = Object.freeze({
   controlTray: (action) => call("controlTray", { action }),
   setCodexAgentMode: (mode) => call("setCodexAgentMode", { mode }),
   controlCodexAutoResume: (action) => call("controlCodexAutoResume", { action }),
+  bindCodexAutoResumeThread: (threadId) => call("bindCodexAutoResumeThread", { threadId }),
   controlCodexChatGptWeb: (action) => call("controlCodexChatGptWeb", { action }),
   addCodexAccount: (label) => call("addCodexAccount", { label }),
   startCodexAccountBrowserLogin: (label) => call("startCodexAccountBrowserLogin", { label }),

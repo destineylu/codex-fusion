@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { realpathSync, symlinkSync } from "node:fs";
+import { existsSync, realpathSync, symlinkSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -54,6 +54,7 @@ import {
 } from "../apps/control-center/electron/codex-skill-control.mjs";
 import {
   codexAutoResumeRoot,
+  controlCodexAutoResume,
   getCodexAutoResumeSnapshot,
 } from "../apps/control-center/electron/codex-auto-resume.mjs";
 import {
@@ -66,6 +67,7 @@ import {
   cancelCodexAccountLogin,
   codexDesktopRunning,
   deleteCodexAccount,
+  getCodexAccountIdentityContext,
   getCodexAccountProfilesSnapshot,
   isWindowsCodexDesktopExecutable,
   parseCodexBrowserLoginOutput,
@@ -973,6 +975,169 @@ test("Codex Auto Resume stays an external fixed-root sidecar", async () => {
   assert.match(helper, /shell: false/);
   assert.doesNotMatch(helper, /shell: true/);
   await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex Auto Resume scopes an unmanaged single native login without silently claiming legacy threads", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "codex-auto-resume-unmanaged-"));
+  const home = path.join(tmp, "home");
+  const liveHome = path.join(home, ".codex");
+  const sidecarRoot = path.join(tmp, "sidecar");
+  const threadId = "33333333-3333-4333-8333-333333333333";
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await mkdir(path.join(sidecarRoot, "src", "codex_auto_resume"), { recursive: true });
+    await writeFile(path.join(liveHome, "auth.json"), JSON.stringify(accountTestAuth("acct-single", "single-live")));
+    await writeFile(path.join(sidecarRoot, "src", "codex_auto_resume", "__init__.py"), '__version__ = "0.2.2"\n');
+    await writeFile(
+      path.join(sidecarRoot, "run.py"),
+      [
+        "import sys",
+        'cmd = sys.argv[1] if len(sys.argv) > 1 else ""',
+        'if cmd == "once":',
+        '    print("dry-run waiting=1")',
+        '    print("  ' + threadId + ' usage-limit reset=None")',
+        'elif cmd == "doctor":',
+        '    print("app_server OK ok")',
+        "",
+      ].join("\n"),
+    );
+
+    const options = {
+      home,
+      platform: "linux",
+      env: {
+        CODEX_AUTO_RESUME_ROOT: sidecarRoot,
+        XDG_DATA_HOME: path.join(tmp, "data"),
+      },
+    };
+    const identity = getCodexAccountIdentityContext(options);
+    assert.equal(identity.activeProfileId, undefined);
+    assert.match(identity.activeAccountFingerprint || "", /^[a-f0-9]{12}$/);
+
+    const result = controlCodexAutoResume("dry-run", options);
+    assert.equal(result.accountFingerprint, identity.activeAccountFingerprint);
+    assert.equal(result.accountGuarded, true);
+    assert.equal(result.unboundThreads, 1);
+    assert.equal(result.mismatchedThreads, 0);
+    assert.match(result.report, /dry-run waiting=0 blocked=1/);
+    assert.equal(result.threads[0]?.threadId, threadId);
+    assert.equal(result.threads[0]?.accountBinding, "unbound");
+    assert.equal(result.threads[0]?.enabled, false);
+    assert.equal(result.threads[0]?.status, "account-unbound");
+
+    const accountRoot = path.join(tmp, "data", "vibcoding", "codex-auto-resume", "accounts");
+    assert.equal(existsSync(path.join(accountRoot, identity.activeAccountFingerprint, "state.json")), true);
+    assert.equal(existsSync(path.join(home, ".codex", "codex-router", "native-accounts", "accounts.json")), false);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("Codex Auto Resume scopes quota/thread state by native account fingerprint", async () => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "codex-auto-resume-accounts-"));
+  const home = path.join(tmp, "home");
+  const liveHome = path.join(home, ".codex");
+  const liveAuth = path.join(liveHome, "auth.json");
+  const sidecarRoot = path.join(tmp, "sidecar");
+  const controlDir = path.join(tmp, "data", "vibcoding", "codex-auto-resume");
+  const threadA = "11111111-1111-4111-8111-111111111111";
+  const threadB = "22222222-2222-4222-8222-222222222222";
+  try {
+    await mkdir(liveHome, { recursive: true });
+    await mkdir(path.join(sidecarRoot, "src", "codex_auto_resume"), { recursive: true });
+    await mkdir(controlDir, { recursive: true });
+    await writeFile(liveAuth, JSON.stringify(accountTestAuth("acct-a", "a-live")));
+    await writeFile(path.join(sidecarRoot, "src", "codex_auto_resume", "__init__.py"), '__version__ = "0.2.2"\n');
+    await writeFile(
+      path.join(sidecarRoot, "run.py"),
+      [
+        "import sys",
+        'cmd = sys.argv[1] if len(sys.argv) > 1 else ""',
+        'if cmd == "once":',
+        '    print("dry-run waiting=2")',
+        '    print("  ' + threadA + ' usage-limit reset=None")',
+        '    print("  ' + threadB + ' usage-limit reset=None")',
+        'elif cmd == "doctor":',
+        '    print("app_server OK ok")',
+        'elif cmd in {"install-autostart", "uninstall-autostart"}:',
+        '    print(cmd)',
+        "",
+      ].join("\n"),
+    );
+
+    const accountOptions = { home, env: {}, platform: "linux", desktopRunning: false };
+    const added = await addCodexAccount("账号 B", {
+      ...accountOptions,
+      loginRunner: async (isolatedHome) => {
+        await mkdir(isolatedHome, { recursive: true });
+        await writeFile(path.join(isolatedHome, "auth.json"), JSON.stringify(accountTestAuth("acct-b", "b-login")));
+      },
+    });
+    const accountB = added.profiles.find((profile) => profile.label === "账号 B");
+    assert.ok(accountB);
+    const contextA = getCodexAccountIdentityContext(accountOptions);
+    const fingerprintA = contextA.activeAccountFingerprint;
+    assert.ok(fingerprintA);
+
+    await new Promise((resolve) => setTimeout(resolve, 8));
+    switchCodexAccount(accountB.id, accountOptions);
+    const contextB = getCodexAccountIdentityContext(accountOptions);
+    const fingerprintB = contextB.activeAccountFingerprint;
+    assert.ok(fingerprintB);
+    assert.notEqual(fingerprintA, fingerprintB);
+    assert.equal(contextB.activations.length >= 2, true);
+
+    const activatedA = Date.parse(contextB.activations.find((entry) => entry.accountFingerprint === fingerprintA).activatedAt) / 1000;
+    const activatedB = Date.parse(contextB.activations.find((entry) => entry.accountFingerprint === fingerprintB).activatedAt) / 1000;
+    assert.ok(activatedB > activatedA);
+
+    await writeFile(path.join(controlDir, "state.json"), JSON.stringify({
+      version: 1,
+      last_status: "reached:rate_limit_reached",
+      last_quota_source: "app-server",
+      last_checked_at: activatedB + 1,
+      last_quota: { primary: { used_percent: 98 } },
+      threads: {
+        [threadA]: { thread_id: threadA, enabled: true, status: "waiting", observed_at: activatedA + 0.001, resumes: 0 },
+        [threadB]: { thread_id: threadB, enabled: true, status: "waiting", observed_at: activatedB + 0.001, resumes: 0 },
+      },
+    }));
+
+    const options = {
+      home,
+      platform: "linux",
+      env: {
+        CODEX_AUTO_RESUME_ROOT: sidecarRoot,
+        XDG_DATA_HOME: path.join(tmp, "data"),
+      },
+    };
+    const result = controlCodexAutoResume("dry-run", options);
+    assert.equal(result.accountFingerprint, fingerprintB);
+    assert.equal(result.accountGuarded, true);
+    assert.match(result.stateDir, new RegExp("accounts[\\\\/]" + fingerprintB + "$"));
+    assert.match(result.report, /dry-run waiting=1 blocked=1/);
+
+    const current = result.threads.find((thread) => thread.threadId === threadB);
+    const foreign = result.threads.find((thread) => thread.threadId === threadA);
+    assert.equal(current?.accountBinding, "current");
+    assert.equal(current?.enabled, true);
+    assert.equal(foreign?.accountBinding, "other");
+    assert.equal(foreign?.enabled, false);
+    assert.equal(foreign?.status, "account-mismatch");
+
+    const config = JSON.parse(await readFile(path.join(controlDir, "config.json"), "utf8"));
+    assert.equal(path.resolve(config.state_dir), path.resolve(result.stateDir));
+    const bindings = JSON.parse(await readFile(path.join(controlDir, "account-bindings.json"), "utf8"));
+    assert.equal(bindings.threads[threadA].accountFingerprint, fingerprintA);
+    assert.equal(bindings.threads[threadB].accountFingerprint, fingerprintB);
+
+    const ipc = await readFile(new URL("../apps/control-center/electron/ipc.mjs", import.meta.url), "utf8");
+    assert.match(ipc, /pauseCodexAutoResumeForAccountSwitch/);
+    assert.match(ipc, /restoreCodexAutoResumeAfterAccountSwitch/);
+    assert.match(ipc, /bindCodexAutoResumeThread/);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
 });
 
 test("ChatGPT Web audited preflight patch is exact, deterministic, and narrow", () => {
@@ -2263,6 +2428,16 @@ test("Codex account switching refuses an open Desktop, syncs refreshed auth, and
     assert.equal(JSON.parse(await readFile(liveAuth, "utf8")).tokens.account_id, "acct-b");
     assert.equal(await readFile(config, "utf8"), configBefore);
     assert.equal(await readFile(routerSentinel, "utf8"), routerBefore);
+    const identityContext = getCodexAccountIdentityContext({
+      home,
+      env: {},
+      platform: "linux",
+      desktopRunning: false,
+    });
+    assert.equal(identityContext.activeProfileId, accountB.id);
+    assert.equal(identityContext.activeAccountFingerprint, accountB.identityFingerprint);
+    assert.equal(identityContext.activations.some((entry) => entry.profileId === accountA.id), true);
+    assert.equal(identityContext.activations.some((entry) => entry.profileId === accountB.id), true);
 
     const storedA = JSON.parse(await readFile(
       path.join(switched.root, "profiles", accountA.id, "auth.json"),

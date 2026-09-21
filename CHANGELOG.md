@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Codex Auto Resume is now scoped to the active native ChatGPT account instead of sharing one quota/thread state across accounts.** Control Center binds tracked threads to an irreversible `accountFingerprint`, stores each native account in its own sidecar `state_dir`, blocks mismatched or unbound legacy threads by default, and pauses/restores the watcher around an explicit native-account switch without restarting Router. If the auth switch commits but the watcher cannot be restored, the account switch remains successful while Auto Resume fails closed in the stopped state. Automatic account rotation is still unsupported.
+
 - **Control Center can now manage and explicitly switch native ChatGPT/Codex accounts on Windows without restarting Router.** Each login is stored as a private local Profile and added through the official Codex OAuth flow in an isolated `CODEX_HOME`. Chrome incognito/alternate-account sign-in supports a guarded localhost callback relay when the browser cannot reach the loopback callback directly, with official device-auth retained as a fallback. Switching requires Codex Desktop to be closed, synchronizes the current refreshed auth back into its Profile, writes a rollback copy, atomically replaces live `auth.json`, verifies the target identity, and leaves Router 4202/4203, `config.toml`, model catalogs, third-party providers, and ChatGPT Web untouched. Desktop detection is path-aware so npm `codex.exe app-server` and AppX resource CLIs do not falsely block switching. Automatic account rotation and quota-triggered account fallback remain intentionally unsupported.
 
 - **Reinstalling over a state directory owned by another checkout no longer

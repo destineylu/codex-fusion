@@ -24,6 +24,8 @@ Codex Auto Resume 只负责：
 - 额度恢复后续跑原 thread；
 - 上游自行管理 watch / autostart / state。
 
+2026-09-21 起，Control Center 在上游 sidecar 外增加 **Native Account Guard**。它不改写或 vendor 上游 Python，而是在调用 sidecar 前后管理账号作用域：每个 Native ChatGPT Profile 使用独立 Auto Resume state，thread 通过不可逆 `accountFingerprint` 绑定；当前 live 账号与 thread fingerprint 不一致时 fail-closed，不允许自动续跑。
+
 它不负责，也不得接管：
 
 - Router provider/model routing；
@@ -72,7 +74,7 @@ CODEX_AUTO_RESUME_ROOT
 
 覆盖 checkout 根目录。Renderer 不允许传入任意路径。
 
-上游自己的 state/config 继续保持其默认目录：
+上游 config 入口继续保持默认目录：
 
 ```text
 Windows:
@@ -81,6 +83,24 @@ Windows:
 macOS:
 ~/Library/Application Support/vibcoding/codex-auto-resume
 ```
+
+账号感知模式下，Control Center 保留这个目录作为控制根，并把 `config.json.state_dir` 指向当前原生账号自己的状态目录：
+
+```text
+<control-root>/
+  config.json
+  account-bindings.json
+  state.json                    # 旧版 legacy，仅迁移输入
+  accounts/
+    <accountFingerprint-A>/
+      state.json
+      codex-fusion-account.json
+    <accountFingerprint-B>/
+      state.json
+      codex-fusion-account.json
+```
+
+不同账号的 `last_quota`、handled mark、resume count 和 thread state 不再共用，避免“账号 A 100% 用尽 → 切账号 B 5%”被误判为同一账号额度恢复。
 
 ## 4. Control Center API
 
@@ -91,7 +111,7 @@ getCodexAutoResume()
 controlCodexAutoResume(action)
 ```
 
-允许 action 只有：
+允许固定 action 只有：
 
 ```text
 install
@@ -102,6 +122,8 @@ disable-autostart
 enable-reset-credit
 disable-reset-credit
 ```
+
+另有一个受限 IPC：`bindCodexAutoResumeThread(threadId)`。它只允许把一个 UUID thread 显式绑定到**当前** Native ChatGPT Profile 的 `accountFingerprint`，不接受任意 fingerprint、路径、命令或账号凭据。
 
 其中 `dry-run` 固定调用上游 `once --dry-run`；reset-credit 只允许两个固定布尔动作，不向 renderer 暴露任意配置键或值。
 
@@ -127,6 +149,19 @@ disable-reset-credit
 
 因此 5 小时额度恢复后的自动续跑与 weekly reset-credit 自动消耗彼此独立。
 
+### Native 多账号保护
+
+- Native Profile Manager 维护 `switch-history.json`，只记录 Profile ID、不可逆 account fingerprint 与激活时间，不记录 token；
+- 单账号用户即使从未建立 saved Profile，也可以直接使用 live `auth.json` 的不可逆 identity fingerprint 建立独立作用域；不会因此自动创建/复制 Profile 或凭据；
+- 对这种未管理单账号，如果 legacy thread 没有 activation 证据，仍必须保持 `UNBOUND`，由用户显式绑定，不能因为“目前只有一个账号”就猜归属；
+- 切换账号前，Control Center 暂停正在运行的 Auto Resume watcher；
+- auth 切换成功后，把 sidecar `state_dir` 切到目标 fingerprint 的独立目录，再恢复原来的 running/autostart 状态；
+- watcher 因而会重新创建 app-server，读取新 live `auth.json`，不会长期持有旧账号 quota session；
+- legacy thread 只有在其 observed time 能落入已记录的账号 activation interval 时才自动归属；无法证明的旧 thread 标记为 `UNBOUND`，默认 disabled；
+- 已绑定到其他账号的 waiting thread 标记为 `account-mismatch`，默认 disabled；
+- 用户可以在 Settings 中把 `UNBOUND` thread 显式“绑定到当前账号”；
+- 账号切换不重启 Router，不修改 Router provider、catalog、failover、compact 或 ChatGPT Web。
+
 ## 6. UI
 
 入口保持在：
@@ -139,8 +174,8 @@ Settings → Codex Auto Resume
 
 显示：
 
-- Settings：installed / stopped / running、sidecar checkout 与版本、autostart、tracked/active thread 数、reset-credit 显式开关、最近一次 doctor / lifecycle / dry-run 结果；
-- Status：只读紧凑卡片，显示 watcher 状态、autostart、tracked/active thread、最近状态/检查时间和 weekly reset-credit 自动消耗是否关闭。
+- Settings：installed / stopped / running、sidecar checkout 与版本、当前 Native 账号名称与 `accountFingerprint`、Guarded/Unbound 状态、autostart、按账号隔离后的 tracked/active thread、每个 thread 的账号归属、UNBOUND 显式绑定按钮、reset-credit 开关、最近一次 doctor / lifecycle / dry-run 结果；
+- Status：只读紧凑卡片，显示当前账号作用域、fingerprint、Guarded 状态、watcher/autostart、tracked/active thread、最近状态/检查时间和 weekly reset-credit 自动消耗是否关闭。
 
 操作：
 
@@ -204,3 +239,51 @@ apps/control-center: npm test
 6. 升级或重装后必须重新确认 `auto_redeem_weekly_reset=false`，不得静默恢复上游 `true` 默认。
 7. 不得把 sidecar checkout 放回 `%LOCALAPPDATA%\codex-router` Git 工作树内。
 8. 不得把 Install 从固定审计 commit 改成浮动 `main`，除非先完成新版本审计。
+9. 不得重新把不同 Native ChatGPT 账号的 quota/thread state 合并回同一个 `state.json`。
+10. Native 账号切换必须保持“pause watcher → auth transaction → accountFingerprint scope → restore watcher”的顺序；失败时宁可 watcher 停止，也不能让旧账号 state 在新账号下自动续跑。
+11. 无法证明归属的 legacy thread 必须保持 UNBOUND/fail-closed，禁止根据余额、Profile label 或 thread 内容猜账号。
+12. 不得要求单账号用户先创建 Native Profile 才能使用 Auto Resume；允许以 live auth identity fingerprint 建作用域，但这不能降低 legacy thread 的归属证明标准。
+
+## 10. 2026-09-21 Native Account Guard 最终验收
+
+最终代码与发行 gate：
+
+```text
+Control Center tests
+84 total
+82 PASS
+2 platform SKIP
+0 FAIL
+
+release:verify
+16/16 reproducibility checks
+119 tests
+114 PASS
+5 SKIP
+0 FAIL
+```
+
+真实本机 dry-run 验收（公开文档去标识化）：
+
+```text
+current managed native account = detected
+accountFingerprint = <irreversible 12-char fingerprint>
+accountGuarded = true
+waiting thread = <current-account thread UUID>
+thread binding = current
+unbound = 0
+mismatch = 0
+```
+
+该验收只运行 doctor / dry-run，没有发起模型请求。公开文档不记录维护者账号别名、真实 fingerprint 或真实 thread ID。随后恢复 Auto Resume 原有运行状态：
+
+```text
+running = true
+autostart = true
+auto_redeem_weekly_reset = false
+Scheduled Task = Running
+```
+
+部署使用 official Windows Control Center rebuild transaction；Router 4202 / 4203 在部署前后保持同一 PID，证明 rebuild 未重启 Router。packaged `app.asar` 已验证包含 accountFingerprint guard、account-mismatch、账号切换 watcher pause/restore、受限 thread bind IPC，以及 renderer 的“原生账号作用域 / 绑定到当前账号”。
+
+本轮外层执行器超时后曾留下两条并发 rebuild 链。按恢复规则先检查 transaction/process tree，终止其中一条重复事务链；随后发现 canonical package 处于已知 split-package 状态，于是把两半分别归档到新的 recovery 目录，非覆盖合并恢复完整 canonical package，再启动一个**独立、单事务、受监控** official rebuild。最终 rebuild 正常 commit，journal/orphan rollback 清空，Tray ready，Router PID 全程未变。以后遇到外层 timeout 继续遵守：**先检查 transaction / process tree，不直接重跑 rebuild。**

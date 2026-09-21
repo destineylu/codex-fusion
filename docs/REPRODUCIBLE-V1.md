@@ -104,7 +104,14 @@ acceptance gate before publishing it.
 - upstream: `feifeigong/codex-auto-resume`
 - install uses the checked-in audited commit, not a floating branch;
 - weekly reset-credit auto-redeem is forced off during install/autostart setup;
-- a new upstream commit is review-only until the audited commit is updated.
+- Control Center adds a native-account guard without vendoring or modifying the audited upstream Python source;
+- each managed Native ChatGPT account uses an independent Auto Resume `state_dir`, keyed by the irreversible account identity fingerprint;
+- quota snapshots, handled marks, resume counts and tracked-thread state must not be shared across Native ChatGPT accounts;
+- every tracked thread is bound to an `accountFingerprint`; a thread bound to another account or a legacy thread whose account cannot be proven is fail-closed and cannot auto-resume;
+- a single unmanaged native login may use the irreversible fingerprint from live `auth.json` as its scope without creating a saved Profile, but legacy thread ownership is still never guessed;
+- switching Native ChatGPT accounts pauses the watcher, commits the auth switch, selects the target account state, then restores the previous watcher/autostart state; Router is not restarted;
+- automatic account rotation remains intentionally unsupported: account switching is still an explicit user action;
+- a new upstream commit is review-only until the audited commit is updated and the account-scope integration is revalidated.
 
 ### Single / Team Agent Mode
 
