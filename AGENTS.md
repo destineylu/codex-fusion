@@ -4,6 +4,7 @@
 
 ## Repository maintenance workflow
 
+- **Before modifying Router, Control Center, native ChatGPT accounts, ChatGPT Web, Context Economy, Multi-Agent, provider routing, or Windows lifecycle/recovery, read `docs/AI-HANDOFF-CODEX-FUSION-ROUTER-CONTROL-CENTER-2026-09-20.md` first.** It is the single handoff entry that explains the current architecture, hard invariants, subsystem boundaries, and known failure modes. Do not infer these relationships from file names alone.
 - Use `$repo-maintainer` for incoming-change adoption decisions and consequential
   maintenance that can cross modules, clients, operating systems, installers,
   providers, credentials, protocols, generated artifacts, or release surfaces.
