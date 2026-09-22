@@ -360,6 +360,12 @@ Windows 下 Codex Desktop、npm CLI、app-server 都可能出现 Codex.exe，因
 
 当前版本刻意不做额度耗尽自动换号、账号池轮换和账号 fallback。
 
+### Native GPT 同 thread 账号接力
+
+账号切换现在优先服务于“账号 A 的 5 小时额度中断，但任务尚未完成”的场景。Control Center 可以在切换到账号 B 时显式选择最近的 Native GPT root thread，并重新打开同一个 `codex://threads/<id>`。Router 的第一轮 B 请求进入跨账号 stateless handoff：保留消息、工具历史、工作区和可携带 reasoning，只删除账号 A 私有 stored-item namespace 中、账号 B 无法解析的裸 `rs_*` reference；目标账号成功接受请求后才提交 thread ownership。
+
+这条能力**独立于 Auto Resume**。Auto Resume 可以在 handoff 后同步 binding，但它未安装、停止或同步失败时，账号接力仍然必须可用。不能把 Native thread handoff 改回“先让 Auto Resume 认领 thread 才允许继续”。
+
 ### Settings：Auto Resume 原生账号隔离
 
 Auto Resume 仍然是独立 sidecar，只负责原生 Codex quota 恢复后继续原 thread，不参与 Router 路由、failover、compact 或 subagent。2026-09-21 起，Control Center 使用 Native Profile 的不可逆 `accountFingerprint` 给 Auto Resume 增加账号作用域：

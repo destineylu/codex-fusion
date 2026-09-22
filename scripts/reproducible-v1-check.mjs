@@ -19,6 +19,9 @@ const installPs1 = read("install.ps1");
 const installSh = read("install.sh");
 const updater = read("src/update.mjs");
 const accountProfiles = read("apps/control-center/electron/codex-account-profiles.mjs");
+const nativeThreadHandoff = read("src/native-thread-handoff.mjs");
+const routerSource = read("src/router.mjs");
+const controlCenterIpc = read("apps/control-center/electron/ipc.mjs");
 const settingsPage = read("apps/control-center/src/pages/SettingsPage.tsx");
 const chatgptWeb = read("apps/control-center/electron/codex-chatgpt-web.mjs");
 const autoResume = read("apps/control-center/electron/codex-auto-resume.mjs");
@@ -106,6 +109,34 @@ check(
     ]),
 );
 check(
+  "Native GPT account switching preserves the same Codex thread independently of Auto Resume",
+  includesAll(nativeThreadHandoff, [
+    "authorizeNativeThreadHandoff",
+    "inspectNativeThreadHandoff",
+    "commitNativeThreadAccount",
+    "previousAccountFingerprint",
+    "pending",
+  ]) &&
+    includesAll(routerSource, [
+      "crossAccountHandoff",
+      "dropUnstoredReasoningReferences",
+      "cross-account-native-turn",
+      "commitNativeThreadAccount",
+    ]) &&
+    includesAll(controlCenterIpc, [
+      '"native-thread-handoff.mjs"',
+      '"authorize"',
+      "handoffThreadId",
+      "codex://threads/",
+      "Auto Resume is a secondary convenience",
+    ]) &&
+    includesAll(settingsPage, [
+      "切换并接力此对话",
+      "同一个 Codex thread",
+      "Auto Resume 只是附加能力",
+    ]),
+);
+check(
   "ChatGPT Web stays pinned to audited v5.0.8 and loopback 17841",
   includesAll(chatgptWeb, [
     'CODEX_CHATGPT_WEB_AUDITED_VERSION = "5.0.8"',
@@ -187,7 +218,9 @@ const releaseSensitive = [
   ["install.ps1", installPs1],
   ["install.sh", installSh],
   ["src/update.mjs", updater],
-  ["apps/control-center/electron/ipc.mjs", read("apps/control-center/electron/ipc.mjs")],
+  ["src/router.mjs", routerSource],
+  ["src/native-thread-handoff.mjs", nativeThreadHandoff],
+  ["apps/control-center/electron/ipc.mjs", controlCenterIpc],
   ["apps/control-center/electron/codex-account-profiles.mjs", accountProfiles],
   ["apps/control-center/src/pages/SettingsPage.tsx", settingsPage],
   ["apps/control-center/electron/codex-chatgpt-web.mjs", chatgptWeb],

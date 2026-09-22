@@ -4,7 +4,7 @@ import { Badge, Button, Dialog, InlineNotice, PageHeader, SectionHeading, Toggle
 import { compactNumber } from "../lib";
 import { LANGUAGE_OPTIONS, type LanguageId, type Translate } from "../i18n";
 import { UI_SCALE_OPTIONS, type UiScale } from "../ui-scale";
-import type { ChatGptSessionStatus, CodexAccountProfile, CodexAccountProfilesSnapshot, CodexAgentMode, CodexAgentModeSnapshot, CodexAutoResumeAction, CodexAutoResumeSnapshot, CodexChatGptWebAction, CodexChatGptWebSnapshot, DoctorSnapshot, PresenceSnapshot, RouterControlApi, RouterHealth, RouterTarget, VisionEngine } from "../types";
+import type { ChatGptSessionStatus, CodexAccountProfile, CodexAccountProfilesSnapshot, CodexAgentMode, CodexAgentModeSnapshot, CodexAutoResumeAction, CodexAutoResumeSnapshot, CodexChatGptWebAction, CodexChatGptWebSnapshot, DoctorSnapshot, HarnessSession, PresenceSnapshot, RouterControlApi, RouterHealth, RouterTarget, VisionEngine } from "../types";
 import { useOptimisticValues, type RunAction } from "../useOptimisticValues";
 
 // Mirrors RETENTION_MIN/MAX/DEFAULT_TTL_DAYS in src/tool-result-retention.mjs.
@@ -60,6 +60,8 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
   const [accountCallbackUrl, setAccountCallbackUrl] = useState("");
   const [accountEditor, setAccountEditor] = useState<{ mode: "add" | "rename"; id?: string; value: string } | null>(null);
   const [pendingAccountSwitch, setPendingAccountSwitch] = useState<CodexAccountProfile | null>(null);
+  const [handoffCandidate, setHandoffCandidate] = useState<HarnessSession | null>(null);
+  const [handoffLoading, setHandoffLoading] = useState(false);
   const [pendingAccountDelete, setPendingAccountDelete] = useState<CodexAccountProfile | null>(null);
   useEffect(() => {
     let active = true;
@@ -193,6 +195,35 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
   useEffect(() => {
     setAccountCallbackUrl("");
   }, [codexAccounts?.loginSession?.id]);
+  useEffect(() => {
+    let active = true;
+    if (!pendingAccountSwitch || !api || typeof api.getContextSessions !== "function") {
+      setHandoffCandidate(null);
+      setHandoffLoading(false);
+      return () => { active = false; };
+    }
+    setHandoffLoading(true);
+    void api.getContextSessions().then((snapshot) => {
+      if (!active) return;
+      const candidates = snapshot.sessions
+        .filter((session) => (
+          session.harnessId === "codex"
+          && session.resumable
+          && !session.archived
+          // Cross-provider family continuation has different compact/storage
+          // semantics. Account handoff is intentionally Native GPT → Native GPT.
+          && (!session.model || !session.model.includes("/"))
+        ))
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+      setHandoffCandidate(candidates[0] || null);
+      setHandoffLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setHandoffCandidate(null);
+      setHandoffLoading(false);
+    });
+    return () => { active = false; };
+  }, [api, pendingAccountSwitch]);
   const trayControlsUnavailable = trayCapability?.supported === false;
   const repairFailures = useMemo(
     () => (repairReport?.checks ?? []).filter((check) => check.status === "fail"),
@@ -1180,26 +1211,79 @@ export function SettingsPage({ target, health, presence, chatgptSession, api, th
       <Dialog
         open={pendingAccountSwitch !== null}
         title="切换 ChatGPT 原生账号？"
-        description="仅切换 Codex Native GPT 的认证身份；Router 不重启。"
-        onClose={() => setPendingAccountSwitch(null)}
+        description="优先支持 Native GPT 未完成任务在同一个 Codex thread 中接力；Router 不重启。"
+        onClose={() => {
+          setPendingAccountSwitch(null);
+          setHandoffCandidate(null);
+        }}
       >
         <p className="dialog-copy">
-          切换到 <strong>{pendingAccountSwitch?.label}</strong> 前，请完全退出 Codex Desktop。Control Center 会先暂停正在运行的 Auto Resume watcher，再同步当前账号最新 auth、原子替换 live auth.json，并把 Auto Resume 切到目标账号独立的 accountFingerprint/state 后恢复原来的 watcher 状态。Router 4202/4203、第三方模型、ChatGPT Web 和 config.toml 全程保持不动。
+          切换到 <strong>{pendingAccountSwitch?.label}</strong> 前，请完全退出 Codex Desktop。账号切换不会删除本地 thread/history。若选择“切换并接力”，Control Center 会为最近的 Native GPT thread 写入一次显式 A→B handoff 授权，切换账号后重新打开同一个 thread；Router 只在新账号真正发送下一条消息时完成 ownership 转移。
+        </p>
+        {handoffLoading ? (
+          <InlineNotice tone="neutral" title="正在查找最近的 Native GPT 对话">
+            只查找本机可继续的 root thread，不读取或显示聊天正文。
+          </InlineNotice>
+        ) : handoffCandidate ? (
+          <InlineNotice tone="neutral" title="可接力的最近 Native GPT 对话">
+            <strong>{handoffCandidate.title}</strong>
+            <div>
+              {handoffCandidate.workspaceLabel || handoffCandidate.workspace || "未知工作区"}
+              {handoffCandidate.model ? ` · ${handoffCandidate.model}` : ""}
+              {handoffCandidate.updatedAt ? ` · ${new Date(handoffCandidate.updatedAt).toLocaleString()}` : ""}
+            </div>
+            <div>接力会保留同一个 thread ID、已有消息历史和工作区；不会把 ChatGPT Web / 第三方 Provider thread 当作 Native 账号接力。</div>
+          </InlineNotice>
+        ) : (
+          <InlineNotice tone="neutral" title="未找到可确认的 Native GPT thread">
+            仍可只切换账号。若要接力其它旧 thread，可在 Codex 中手工重新打开；未显式授权的跨账号 thread 不会由 Control Center 自动迁移。
+          </InlineNotice>
+        )}
+        <p className="dialog-copy">
+          Auto Resume 只是附加能力：如果已安装，会在接力准备后尝试同步 thread binding；即使 Auto Resume 未安装或恢复失败，也不会阻止 Native thread 接力。Router 4202/4203、第三方模型、ChatGPT Web 和 config.toml 全程保持不动。
         </p>
         <div className="dialog-actions">
-          <Button variant="secondary" onClick={() => setPendingAccountSwitch(null)}>取消</Button>
           <Button
-            variant="primary"
+            variant="secondary"
+            onClick={() => {
+              setPendingAccountSwitch(null);
+              setHandoffCandidate(null);
+            }}
+          >
+            取消
+          </Button>
+          <Button
+            variant="secondary"
             disabled={!api || !pendingAccountSwitch}
             onClick={() => {
               if (!api || !pendingAccountSwitch) return;
               const profile = pendingAccountSwitch;
               setPendingAccountSwitch(null);
+              setHandoffCandidate(null);
               runCodexAccountAction("Switch ChatGPT account", () => api.switchCodexAccount(profile.id));
             }}
           >
-            已退出 Codex，切换账号
+            仅切换账号
           </Button>
+          {handoffCandidate ? (
+            <Button
+              variant="primary"
+              disabled={!api || !pendingAccountSwitch}
+              onClick={() => {
+                if (!api || !pendingAccountSwitch || !handoffCandidate) return;
+                const profile = pendingAccountSwitch;
+                const threadId = handoffCandidate.id;
+                setPendingAccountSwitch(null);
+                setHandoffCandidate(null);
+                runCodexAccountAction(
+                  "Switch ChatGPT account and hand off thread",
+                  () => api.switchCodexAccount(profile.id, { handoffThreadId: threadId }),
+                );
+              }}
+            >
+              切换并接力此对话
+            </Button>
+          ) : null}
         </div>
       </Dialog>
 

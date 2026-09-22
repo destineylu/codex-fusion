@@ -469,7 +469,15 @@ Control Center Usage 分层显示官方计划、5h/weekly、local usage value、
 
 ---
 
-## 12. Codex Auto Resume：只负责 quota 恢复续跑，但必须按 Native 账号隔离
+## 12. Native GPT 账号接力优先，Auto Resume 只是附加层
+
+当 Native GPT 账号 A 因 5 小时额度耗尽导致任务中断时，首要目标是：**切换到账号 B 后继续同一个 Codex root thread，不要求新建对话。** Control Center 的“切换并接力此对话”会写入一次 A→B handoff 授权并重新打开同一个 `codex://threads/<id>`；Router 在 B 的第一轮 Native 请求里保留完整消息、工具历史、工作区和可携带 opaque reasoning，只删除账号 A 后端 stored-item namespace 中账号 B 无法解析的裸 `rs_*` reference。只有 B 上游接受请求后才提交 thread ownership。
+
+这条能力独立于 Auto Resume。**禁止把 handoff 改成依赖 Auto Resume 安装、watcher 运行或 binding 成功。** Auto Resume 未安装、停止或同步失败时，同 thread 接力仍必须可用。
+
+Windows Desktop 判定必须使用真实进程路径：优先 `Win32_Process.ExecutablePath`，只认已知 Desktop 安装根；npm `codex.exe app-server`、AppX `app\\resources\\codex.exe` 和 CLI `codex.exe --version` 不能阻止切号。只有无法确认身份的 Codex-like 进程才 fail-closed。
+
+### Auto Resume：只负责 quota 恢复续跑，但必须按 Native 账号隔离
 
 Auto Resume 的职责：
 

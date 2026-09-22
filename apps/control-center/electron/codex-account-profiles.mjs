@@ -374,10 +374,12 @@ export function codexDesktopRunning({
   spawnSyncImpl = spawnSync,
 } = {}) {
   if (platform === "win32") {
-    // Codex Desktop and Codex CLI both use a process named Codex.exe. A plain
-    // tasklist name check therefore treats npm CLI/app-server processes as the
-    // Desktop app and permanently blocks account switching. Ask Windows for
-    // executable paths and only count known Desktop installation roots.
+    // Codex Desktop and Codex CLI/app-server all use the Codex.exe process
+    // name. Get-Process .Path is not reliable here: on some Windows builds it
+    // throws for npm-installed app-server processes even though WMI/CIM can
+    // still read ExecutablePath. Query Win32_Process instead and classify by
+    // the real executable path. Only an actually unreadable/unknown Codex-like
+    // process fails closed; a proven app-server process is not Desktop.
     const result = spawnSyncImpl(
       "powershell.exe",
       [
@@ -385,17 +387,38 @@ export function codexDesktopRunning({
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Get-Process -Name Codex,ChatGPT -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Path } catch { '__CODEX_PATH_UNREADABLE__' } }",
+        "Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -in @('codex.exe','ChatGPT.exe') } | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
       ],
       { encoding: "utf8", windowsHide: true, shell: false, timeout: 3_000 },
     );
     if (result?.error || result?.status !== 0) return true;
-    const paths = String(result.stdout || "")
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (paths.includes("__CODEX_PATH_UNREADABLE__")) return true;
-    return paths.some(isWindowsCodexDesktopExecutable);
+    const raw = String(result.stdout || "").trim();
+    if (!raw) return false;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return true;
+    }
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    for (const row of rows) {
+      const executablePath = typeof row?.ExecutablePath === "string"
+        ? row.ExecutablePath.trim()
+        : "";
+      const commandLine = typeof row?.CommandLine === "string"
+        ? row.CommandLine.trim()
+        : "";
+      if (executablePath) {
+        if (isWindowsCodexDesktopExecutable(executablePath)) return true;
+        continue;
+      }
+      if (/\bcodex(?:\.exe)?\b[\s\S]*\bapp-server\b/i.test(commandLine)) continue;
+      // A named Codex/ChatGPT process whose identity Windows will not reveal is
+      // the only ambiguous case. Refuse the auth mutation rather than risk
+      // switching underneath a real Desktop process.
+      return true;
+    }
+    return false;
   }
   if (platform === "darwin") {
     for (const name of ["Codex", "ChatGPT"]) {

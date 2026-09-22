@@ -26,6 +26,8 @@ Codex Auto Resume 只负责：
 
 2026-09-21 起，Control Center 在上游 sidecar 外增加 **Native Account Guard**。它不改写或 vendor 上游 Python，而是在调用 sidecar 前后管理账号作用域：每个 Native ChatGPT Profile 使用独立 Auto Resume state，thread 通过不可逆 `accountFingerprint` 绑定；当前 live 账号与 thread fingerprint 不一致时 fail-closed，不允许自动续跑。
 
+2026-09-22 明确优先级：**Native GPT same-thread account handoff 高于 Auto Resume。** Auto Resume 只能在 handoff 成功准备后同步 thread binding；sidecar 未安装、watcher 恢复失败或 binding 同步失败，都不能阻止账号 B 重新打开并继续原 Codex thread。
+
 它不负责，也不得接管：
 
 - Router provider/model routing；

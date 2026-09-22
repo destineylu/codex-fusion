@@ -46,6 +46,7 @@ import {
   addCodexAccount,
   cancelCodexAccountLogin,
   deleteCodexAccount,
+  getCodexAccountIdentityContext,
   getCodexAccountProfilesSnapshot,
   renameCodexAccount,
   startCodexAccountBrowserLogin,
@@ -1232,8 +1233,36 @@ export function registerIpcHandlers({
   handleAction("renameCodexAccount", async ({ id, label } = {}) => {
     return renameCodexAccount(stringValue(id, "Account id"), stringValue(label, "Account name"));
   }, { requiresCompatibleRouter: false });
-  handleAction("switchCodexAccount", async ({ id } = {}) => {
+  handleAction("switchCodexAccount", async ({ id, handoffThreadId } = {}) => {
     const targetId = stringValue(id, "Account id");
+    const handoffId = handoffThreadId === undefined || handoffThreadId === ""
+      ? undefined
+      : stringValue(handoffThreadId, "Codex thread id", SESSION_UUID).toLowerCase();
+
+    let handoffSession;
+    let sourceFingerprint;
+    let targetFingerprint;
+    if (handoffId) {
+      handoffSession = getContextSessionsSnapshot().sessions.find((entry) => (
+        entry.harnessId === "codex"
+        && entry.id === handoffId
+        && !entry.archived
+        && entry.resumable
+      ));
+      if (!handoffSession) {
+        throw new Error("The selected Codex thread is not available for account handoff.");
+      }
+      const identity = getCodexAccountIdentityContext();
+      sourceFingerprint = identity.activeAccountFingerprint;
+      targetFingerprint = identity.profiles.find((profile) => profile.id === targetId)?.identityFingerprint;
+      if (!sourceFingerprint || !targetFingerprint) {
+        throw new Error("Both source and target Native ChatGPT accounts need a verified identity fingerprint before thread handoff.");
+      }
+      if (sourceFingerprint === targetFingerprint) {
+        throw new Error("The selected target account is already active.");
+      }
+    }
+
     const continuation = pauseCodexAutoResumeForAccountSwitch();
     let result;
     try {
@@ -1248,25 +1277,72 @@ export function registerIpcHandlers({
       throw error;
     }
 
+    const report = [result.report];
+    let handoffPrepared = false;
+    if (handoffId) {
+      try {
+        await runRouterScript(
+          "native-thread-handoff.mjs",
+          ["authorize", handoffId, sourceFingerprint, targetFingerprint],
+          { timeoutMs: 30_000 },
+        );
+        handoffPrepared = true;
+        report.push(
+          `Prepared Native thread handoff for "${cleanText(handoffSession?.title, "Codex task", 160)}". The same thread will continue under the target account.`,
+        );
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Native thread handoff could not be prepared.";
+        report.push(
+          `Account switched successfully, but the selected thread handoff was not prepared: ${cleanText(detail, "unknown error", 500)}. The thread was not opened automatically.`,
+        );
+      }
+    }
+
     try {
       const autoResume = restoreCodexAutoResumeAfterAccountSwitch(continuation);
-      return {
-        ...result,
-        report: [result.report, autoResume.report].filter(Boolean).join(" "),
-      };
+      if (autoResume.report) report.push(autoResume.report);
+      if (handoffPrepared && handoffId && autoResume.installed) {
+        try {
+          const bound = bindCodexAutoResumeThreadToCurrentAccount(handoffId);
+          if (bound.report) report.push(bound.report);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "Auto Resume handoff sync failed.";
+          report.push(
+            `Thread handoff remains ready; Auto Resume sync was skipped: ${cleanText(detail, "unknown error", 400)}.`,
+          );
+        }
+      }
     } catch (error) {
-      // The auth transaction already committed and must not be reported as if
-      // it rolled back. Auto Resume remains fail-closed/stopped until the user
-      // runs doctor/dry-run or re-enables it.
+      // Auto Resume is a secondary convenience. Never roll back or block a
+      // committed account/thread handoff because its watcher could not recover.
       const detail = error instanceof Error ? error.message : "Auto Resume could not be restored.";
-      return {
-        ...result,
-        report: [
-          result.report,
-          `Auto Resume was not restored after the account switch: ${cleanText(detail, "unknown error", 600)}. It remains stopped; run doctor/dry-run before enabling it again.`,
-        ].filter(Boolean).join(" "),
-      };
+      report.push(
+        `Auto Resume was not restored after the account switch: ${cleanText(detail, "unknown error", 600)}. It remains stopped; the Native thread handoff is unaffected.`,
+      );
     }
+
+    if (handoffPrepared && handoffId) {
+      if (!shell?.openExternal) {
+        report.push("Thread handoff is ready, but Codex task links are unavailable. Reopen the same thread manually.");
+      } else {
+        try {
+          await shell.openExternal(`codex://threads/${handoffId}`);
+          report.push("Reopened the same Codex thread. Send the next message there to continue under the new account.");
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "Codex thread could not be opened.";
+          report.push(
+            `Thread handoff is ready, but automatic reopen failed: ${cleanText(detail, "unknown error", 400)}. Reopen the same thread manually.`,
+          );
+        }
+      }
+    }
+
+    return {
+      ...result,
+      handoffThreadId: handoffPrepared ? handoffId : undefined,
+      handoffPrepared,
+      report: report.filter(Boolean).join(" "),
+    };
   }, { requiresCompatibleRouter: false });
   handleAction("deleteCodexAccount", async ({ id } = {}) => {
     return deleteCodexAccount(stringValue(id, "Account id"));

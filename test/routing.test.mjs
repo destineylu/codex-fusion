@@ -17,6 +17,11 @@ import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { callerBaseUrl } from "../src/caller-auth.mjs";
 import {
+  authorizeNativeThreadHandoff,
+  nativeAccountFingerprintFromHeaders,
+  nativeThreadHandoffSnapshot,
+} from "../src/native-thread-handoff.mjs";
+import {
   CHECKPOINT_WARNING,
   decodeCompaction,
   encodeCheckpoint,
@@ -2371,6 +2376,143 @@ test("router drops foreign reasoning items before stateless native replay", asyn
       stored.input.find((item) => item?.id === mixedSummaryReasoning.id),
       mixedSummaryReasoning,
     );
+  } finally {
+    await stopChild(router);
+    await closeServer(native.server);
+    rmSync(testRoot, { recursive: true, force: true });
+  }
+});
+
+test("native GPT account handoff keeps the same thread and drops only old account stored reasoning references", async () => {
+  const nativeRequests = [];
+  const native = await mockServer(async (request, response) => {
+    if (request.method !== "POST") {
+      json(response, 200, { ok: true });
+      return;
+    }
+    nativeRequests.push({
+      url: request.url,
+      headers: request.headers,
+      body: await bodyJson(request),
+    });
+    json(response, 200, {
+      id: "native-" + nativeRequests.length,
+      object: "response",
+      status: "completed",
+      output: [],
+    });
+  });
+  const testRoot = mkdtempSync(path.join(os.tmpdir(), "native-account-handoff-route-"));
+  const stateDir = path.join(testRoot, "state");
+  const handoffPath = path.join(stateDir, "native-thread-handoff.json");
+  mkdirSync(stateDir, { recursive: true });
+  const routerPort = await openPort();
+  const router = run("router.mjs", {
+    CODEX_ROUTER_PORT: String(routerPort),
+    CODEX_NATIVE_BASE_URL: "http://127.0.0.1:" + native.port + "/backend-api/codex",
+    CODEX_ROUTER_GATEWAY_BASE_URL: "http://127.0.0.1:" + native.port + "/v1",
+    MODEL_ROUTER_STATE_DIR: stateDir,
+    CODEX_ROUTER_NATIVE_THREAD_HANDOFF: handoffPath,
+    CODEX_ROUTER_QUIET: "1",
+  });
+  const threadId = "123e4567-e89b-42d3-a456-426614174000";
+  const headersA = {
+    Authorization: "Bearer NATIVE_ACCOUNT_A_TOKEN",
+    "ChatGPT-Account-Id": "native-account-a",
+    "Thread-Id": threadId,
+    "Content-Type": "application/json",
+  };
+  const headersB = {
+    Authorization: "Bearer NATIVE_ACCOUNT_B_TOKEN",
+    "ChatGPT-Account-Id": "native-account-b",
+    "Thread-Id": threadId,
+    "Content-Type": "application/json",
+  };
+  const staleReference = { type: "item_reference", id: "rs_account_a_stored" };
+  const portableReasoning = {
+    type: "reasoning",
+    id: "rs_portable",
+    summary: [],
+    content: null,
+    encrypted_content: "gAAAAABkZmtM7cT9w_XY_zPortableOpaqueBlob",
+  };
+  const userMessage = {
+    type: "message",
+    role: "user",
+    content: [{ type: "input_text", text: "continue the unfinished task" }],
+  };
+
+  try {
+    await waitFor(routerBase(routerPort) + "/models", router);
+
+    const first = await fetch(routerBase(routerPort) + "/responses", {
+      method: "POST",
+      headers: headersA,
+      body: JSON.stringify({
+        model: "gpt-5.6-luna",
+        previous_response_id: "resp-owned-by-a",
+        input: [staleReference, userMessage],
+      }),
+    });
+    assert.equal(first.status, 200, await first.text());
+    assert.equal(nativeRequests.length, 1);
+    assert.equal(nativeRequests[0].headers["chatgpt-account-id"], "native-account-a");
+    assert.equal(nativeRequests[0].body.previous_response_id, undefined);
+    assert.deepEqual(nativeRequests[0].body.input[0], staleReference);
+
+    const fingerprintA = nativeAccountFingerprintFromHeaders({
+      "chatgpt-account-id": "native-account-a",
+    });
+    const fingerprintB = nativeAccountFingerprintFromHeaders({
+      "chatgpt-account-id": "native-account-b",
+    });
+    assert.ok(fingerprintA);
+    assert.ok(fingerprintB);
+    authorizeNativeThreadHandoff(threadId, fingerprintA, fingerprintB, {
+      storePath: handoffPath,
+      now: new Date("2026-09-22T00:00:00Z"),
+    });
+
+    const second = await fetch(routerBase(routerPort) + "/responses", {
+      method: "POST",
+      headers: headersB,
+      body: JSON.stringify({
+        model: "gpt-5.6-luna",
+        previous_response_id: "resp-owned-by-a",
+        input: [staleReference, portableReasoning, userMessage],
+      }),
+    });
+    assert.equal(second.status, 200, await second.text());
+    assert.equal(nativeRequests.length, 2);
+    assert.equal(nativeRequests[1].headers["chatgpt-account-id"], "native-account-b");
+    assert.equal(nativeRequests[1].body.previous_response_id, undefined);
+    assert.equal(
+      nativeRequests[1].body.input.some((item) => item?.id === staleReference.id),
+      false,
+    );
+    assert.deepEqual(
+      nativeRequests[1].body.input.find((item) => item?.id === portableReasoning.id),
+      portableReasoning,
+    );
+    assert.deepEqual(nativeRequests[1].body.input.at(-1), userMessage);
+
+    const stateAfterHandoff = nativeThreadHandoffSnapshot({ storePath: handoffPath });
+    assert.equal(stateAfterHandoff.threads[threadId].accountFingerprint, fingerprintB);
+    assert.equal(stateAfterHandoff.threads[threadId].previousAccountFingerprint, fingerprintA);
+    assert.equal(stateAfterHandoff.threads[threadId].handoffCount, 1);
+    assert.equal(stateAfterHandoff.pending[threadId], undefined);
+
+    const third = await fetch(routerBase(routerPort) + "/responses", {
+      method: "POST",
+      headers: headersB,
+      body: JSON.stringify({
+        model: "gpt-5.6-luna",
+        input: [staleReference, userMessage],
+      }),
+    });
+    assert.equal(third.status, 200, await third.text());
+    assert.equal(nativeRequests.length, 3);
+    assert.deepEqual(nativeRequests[2].body.input[0], staleReference);
   } finally {
     await stopChild(router);
     await closeServer(native.server);
@@ -7175,20 +7317,21 @@ test("ordinary child traffic does not mutate a legacy local proven record", asyn
 // every conversation on that model.
 test("a subagent effort reaches child turns and leaves parent turns alone", async () => {
   const stateDir = mkdtempSync(path.join(os.tmpdir(), "subagent-effort-e2e-"));
-  // The state directory has to be in the environment *before* the module is
-  // imported: paths.mjs resolves it once at import time, so importing first
-  // and pointing afterwards writes to the real user config instead.
-  const previousStateDir = process.env.MODEL_ROUTER_STATE_DIR;
-  process.env.MODEL_ROUTER_STATE_DIR = stateDir;
-  try {
-    const { setSubagentEffort } = await import(
-      `../src/multi-agent-state.mjs?e2e=${Date.now()}`
-    );
-    setSubagentEffort("deepseek/deepseek-v4-pro", "max");
-  } finally {
-    if (previousStateDir === undefined) delete process.env.MODEL_ROUTER_STATE_DIR;
-    else process.env.MODEL_ROUTER_STATE_DIR = previousStateDir;
-  }
+  // Write the isolated state fixture directly. Importing multi-agent-state
+  // after changing MODEL_ROUTER_STATE_DIR is not sufficient in this test
+  // process because its paths.mjs dependency may already be cached by another
+  // test and would then write into the real user state directory.
+  writeFileSync(
+    path.join(stateDir, "multi-agent-settings.json"),
+    `${JSON.stringify({
+      version: 2,
+      mode: "all",
+      enabled: [],
+      disabled: [],
+      efforts: { "deepseek/deepseek-v4-pro": "max" },
+    })}\n`,
+    { mode: 0o600 },
+  );
 
   const seen = [];
   const gateway = await mockServer(async (request, response) => {

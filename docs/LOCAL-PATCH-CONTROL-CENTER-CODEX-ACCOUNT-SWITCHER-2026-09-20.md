@@ -105,7 +105,24 @@ Control Center
 10. 如果 auth 已经成功切换，但 Auto Resume 恢复失败，不得把整个账号切换误报成失败；账号保持目标身份，Auto Resume fail-closed 保持停止，要求 doctor/dry-run 后手动恢复。
 11. 用户重新打开 Codex Desktop。
 
-这里**不包含 Router lifecycle 操作**。Auto Resume 联动只影响其自己的 watcher/state，不允许 stop/restart Router。
+这里**不包含日常 Router lifecycle 操作**。Auto Resume 联动只影响其自己的 watcher/state，不允许因为切号 stop/restart Router。
+
+### 账号 A → B 同 thread 接力
+
+2026-09-22 起，账号切换增加显式 `handoffThreadId`：
+
+1. Control Center 只从本机可继续的 Codex root session 中选择 Native GPT thread；ChatGPT Web / 第三方 Provider thread 不进入该自动候选；
+2. 完成 auth A→B 切换后，通过 `src/native-thread-handoff.mjs authorize` 写入一次 credential-free handoff 授权，只保存 thread UUID 和不可逆 fingerprint；
+3. 立即用 `codex://threads/<id>` 重新打开同一 thread；
+4. Router 看到 B 对同一 root thread 的第一轮 Native 请求后进入 stateless handoff：删除账号 A 无法跨账号解析的裸 `rs_*` stored reference，保留其它消息、工具历史和 portable reasoning；
+5. 只有 B 上游接受请求后，Router 才把 thread ownership 提交给 B；失败则授权保持 pending，可重试；
+6. Auto Resume 若存在，仅在 handoff 准备完成后尝试同步 binding；失败只报告 warning，不取消 handoff。
+
+这条路径的目标是解决“5 小时额度突然用尽但任务尚未完成”的真实场景。它不是自动轮换账号，也不会在后台自行切号。
+
+### Windows Desktop 检测
+
+`Codex.exe` 同时被 Desktop 和 CLI/app-server 使用。旧 `Get-Process .Path` 在部分 Windows 环境对 npm app-server 会抛异常，从而把 CLI 误判为 Desktop。当前实现改用 `Get-CimInstance Win32_Process` 的 `ExecutablePath + CommandLine`：只认明确 Desktop 安装路径；已证明的 `app-server` / CLI 进程不阻止切号；身份完全不可判定时仍 fail-closed。
 
 ## 6. 与 ChatGPT Web 的边界
 

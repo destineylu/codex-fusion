@@ -1241,6 +1241,7 @@ test("preload exposes only the named control operations", async () => {
     "getCodexAutoResume",
     "getCodexChatGptWeb",
     "getContextSessions",
+    "switchCodexAccount",
     "minimizeWindow",
     "toggleMaximizeWindow",
     "closeWindow",
@@ -1338,6 +1339,7 @@ test("preload constructs exact positional IPC payloads", async () => {
     ["controlCodexChatGptWeb", ["start-daemon"], { action: "start-daemon" }],
     ["controlCodexChatGptWeb", ["stop-managed"], { action: "stop-managed" }],
     ["controlCodexChatGptWeb", ["verify-isolation"], { action: "verify-isolation" }],
+    ["switchCodexAccount", ["22222222-2222-4222-8222-222222222222", { handoffThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }], { id: "22222222-2222-4222-8222-222222222222", handoffThreadId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
     ["setCodexContextMode", ["light"], { mode: "light" }],
     ["setCodexSkillException", ["xiaohongshu-box", true], { skillName: "xiaohongshu-box", enabled: true }],
     ["launchHarness", ["codex", "app"], { harnessId: "codex", surface: "app" }],
@@ -2098,10 +2100,20 @@ test("Codex Desktop detection ignores CLI/app-server executables and recognizes 
     platform: "win32",
     spawnSyncImpl: () => ({
       status: 0,
-      stdout: [
-        "C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\vendor\\bin\\codex.exe",
-        "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe",
-      ].join("\r\n"),
+      stdout: JSON.stringify([
+        {
+          ProcessId: 101,
+          Name: "codex.exe",
+          ExecutablePath: "C:\\Users\\test\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\vendor\\bin\\codex.exe",
+          CommandLine: "codex.exe app-server",
+        },
+        {
+          ProcessId: 102,
+          Name: "codex.exe",
+          ExecutablePath: "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe",
+          CommandLine: "codex.exe app-server --listen stdio://",
+        },
+      ]),
     }),
   });
   assert.equal(cliOnly, false);
@@ -2110,16 +2122,49 @@ test("Codex Desktop detection ignores CLI/app-server executables and recognizes 
     platform: "win32",
     spawnSyncImpl: () => ({
       status: 0,
-      stdout: "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\Codex.exe\r\n",
+      stdout: JSON.stringify({
+        ProcessId: 103,
+        Name: "Codex.exe",
+        ExecutablePath: "C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.915.4065.0_x64__2p2nqsd0c76g0\\app\\Codex.exe",
+        CommandLine: "Codex.exe",
+      }),
     }),
   });
   assert.equal(desktopPresent, true);
 
-  const unreadableIdentity = codexDesktopRunning({
+  const unreadableAppServer = codexDesktopRunning({
     platform: "win32",
-    spawnSyncImpl: () => ({ status: 0, stdout: "__CODEX_PATH_UNREADABLE__\r\n" }),
+    spawnSyncImpl: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        ProcessId: 104,
+        Name: "codex.exe",
+        ExecutablePath: null,
+        CommandLine: "codex.exe app-server --listen stdio://",
+      }),
+    }),
   });
-  assert.equal(unreadableIdentity, true);
+  assert.equal(unreadableAppServer, false);
+
+  const unreadableUnknown = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        ProcessId: 105,
+        Name: "Codex.exe",
+        ExecutablePath: null,
+        CommandLine: null,
+      }),
+    }),
+  });
+  assert.equal(unreadableUnknown, true);
+
+  const malformedProbe = codexDesktopRunning({
+    platform: "win32",
+    spawnSyncImpl: () => ({ status: 0, stdout: "{not-json" }),
+  });
+  assert.equal(malformedProbe, true);
 
   const failedProbe = codexDesktopRunning({
     platform: "win32",
@@ -2340,6 +2385,36 @@ test("Codex account switching is auth-only and contains no Router lifecycle or c
   assert.doesNotMatch(source, /config\.toml|model_provider|merged-models|model_catalog/i);
   assert.match(source, /routerRestartRequired:\s*false/);
   assert.match(source, /configMutationRequired:\s*false/);
+});
+
+test("Native account handoff prioritizes the same Codex thread over Auto Resume", async () => {
+  const ipc = await readFile(
+    new URL("../apps/control-center/electron/ipc.mjs", import.meta.url),
+    "utf8",
+  );
+  const settings = await readFile(
+    new URL("../apps/control-center/src/pages/SettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(ipc, /native-thread-handoff\.mjs/);
+  assert.match(ipc, /\["authorize", handoffId, sourceFingerprint, targetFingerprint\]/);
+  assert.match(ipc, /codex:\/\/threads\/\$\{handoffId\}/);
+  assert.match(ipc, /Auto Resume is a secondary convenience/);
+  assert.match(ipc, /Thread handoff remains ready; Auto Resume sync was skipped/);
+  const switchHandler = ipc.match(
+    /handleAction\("switchCodexAccount"[\s\S]*?handleAction\("deleteCodexAccount"/,
+  )?.[0];
+  assert.ok(switchHandler, "switchCodexAccount handler should be readable");
+  assert.ok(
+    switchHandler.indexOf('"native-thread-handoff.mjs"') < switchHandler.indexOf("shell.openExternal"),
+    "handoff authorization must exist before the same thread is reopened",
+  );
+
+  assert.match(settings, /切换并接力此对话/);
+  assert.match(settings, /同一个 Codex thread/);
+  assert.match(settings, /Auto Resume 只是附加能力/);
+  assert.match(settings, /ChatGPT Web \/ 第三方 Provider thread/);
 });
 
 test("Codex account profiles add a second official-login profile without changing the live account", async () => {

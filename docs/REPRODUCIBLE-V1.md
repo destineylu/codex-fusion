@@ -99,6 +99,15 @@ Maintainers must review it, update the audited version/hash set, determine
 whether the v5.0.8 preflight patch is still needed, and rerun the ChatGPT Web
 acceptance gate before publishing it.
 
+### Native GPT account handoff
+
+- explicit Native account switching can preserve and reopen the same Codex root thread;
+- handoff state is local and credential-free: it stores only thread UUIDs and irreversible account fingerprints;
+- the target account's first accepted Native turn commits ownership; a rejected turn leaves the handoff pending;
+- cross-account first-turn normalization is stateless and drops only account-local bare `rs_*` stored references while preserving portable history;
+- Auto Resume is optional and must never become a prerequisite for thread handoff;
+- automatic quota-triggered account rotation remains intentionally unsupported.
+
 ### Codex Auto Resume
 
 - upstream: `feifeigong/codex-auto-resume`

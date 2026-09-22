@@ -190,6 +190,29 @@ final routed compatibility through 4202
 
 升级或重装后必须重新确认 `auto_redeem_weekly_reset=false`，不得因为上游默认值而恢复自动消耗 reset credit。
 
+2026-09-22 增加的 **Native GPT same-thread handoff** 是比 Auto Resume 更高优先级的本地能力，升级必须保留：
+
+```text
+显式切换账号 A → B
+→ 可选最近 Native GPT root thread
+→ 写入 handoff 授权
+→ 重新打开同一 codex://threads/<id>
+→ B 第一轮走 stateless native handoff
+→ 删除 A 私有裸 rs_* stored reference
+→ B 上游成功后才提交 thread ownership
+```
+
+重点文件：
+
+- `src/native-thread-handoff.mjs`
+- `src/router.mjs` 的 `crossAccountHandoff` / `commitNativeThreadAccount`
+- Control Center `switchCodexAccount(..., { handoffThreadId })`
+- Settings 的“切换并接力此对话”
+
+**Auto Resume 不是这条能力的前置条件。** sidecar 未安装、watcher 停止或 binding 同步失败，都不能阻塞 same-thread handoff。
+
+Windows Native Account 切换还必须保留 `Win32_Process.ExecutablePath` 的 Desktop 检测；不要退回 `Get-Process .Path` 或单纯进程名判断，否则 npm `codex.exe app-server` 会再次被误判为 Desktop。
+
 2026-09-21 增加的 Native Account Guard 也属于升级必须保留的本地安全层：
 
 ```text

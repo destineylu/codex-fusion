@@ -398,6 +398,22 @@ const bridgeSource = String.raw`
     getCodexAutoResume: async () => codexAutoResumeSnapshot(),
     getCodexChatGptWeb: async () => codexChatGptWebSnapshot(),
     getCodexAccounts: async () => codexAccountsSnapshot(),
+    getContextSessions: async () => ({
+      fetchedAt: "2026-09-22T00:00:00.000Z",
+      counts: { total: 1, codex: 1, deepcode: 0, archived: 0 },
+      sessions: [{
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        harnessId: "codex",
+        title: "未完成的 Native GPT 任务",
+        updatedAt: "2026-09-22T00:00:00.000Z",
+        workspace: "C:/work/project-a",
+        workspaceLabel: "project-a",
+        model: "gpt-5.6-luna",
+        archived: false,
+        resumable: true,
+        status: "saved",
+      }],
+    }),
     getAccountUsage: async () => {
       accountUsageReads += 1;
       await new Promise((resolve) => setTimeout(resolve, accountDelay ?? usageDelayMs));
@@ -757,15 +773,22 @@ const bridgeSource = String.raw`
       codexAccountProfiles = codexAccountProfiles.map((profile) => profile.id === id ? { ...profile, label } : profile);
       return codexAccountsSnapshot("账号名称已更新；认证身份和 Router 配置均未改变。");
     },
-    switchCodexAccount: async (id) => {
-      record("switchCodexAccount", id);
+    switchCodexAccount: async (id, options) => {
+      record("switchCodexAccount", id, options);
       codexAccountProfiles = codexAccountProfiles.map((profile) => ({
         ...profile,
         active: profile.id === id,
         markedActive: profile.id === id,
         liveMatches: profile.id === id,
       }));
-      return codexAccountsSnapshot("账号已切换。Router 全程保持运行；请重新打开 Codex Desktop 使用新账号。");
+      return {
+        ...codexAccountsSnapshot(options?.handoffThreadId
+          ? "账号已切换并已准备同一 Native GPT thread 接力。Router 全程保持运行。"
+          : "账号已切换。Router 全程保持运行；请重新打开 Codex Desktop 使用新账号。"),
+        ...(options?.handoffThreadId
+          ? { handoffThreadId: options.handoffThreadId, handoffPrepared: true }
+          : {}),
+      };
     },
     deleteCodexAccount: async (id) => {
       record("deleteCodexAccount", id);
@@ -1302,10 +1325,17 @@ test("Settings exposes explicit native ChatGPT account switching without Router 
     await dialog.waitFor();
     assert.match(await dialog.innerText(), /Router 4202\/4203/);
     assert.match(await dialog.innerText(), /config\.toml/);
-    await dialog.getByRole("button", { name: "已退出 Codex，切换账号", exact: true }).click();
+    await dialog.getByText("未完成的 Native GPT 任务", { exact: true }).waitFor();
+    assert.match(await dialog.innerText(), /project-a/);
+    assert.match(await dialog.innerText(), /gpt-5\.6-luna/);
+    assert.match(await dialog.innerText(), /Auto Resume 只是附加能力/);
+    assert.equal(await dialog.getByRole("button", { name: "仅切换账号", exact: true }).count(), 1);
+    await dialog.getByRole("button", { name: "切换并接力此对话", exact: true }).click();
     await page.waitForFunction(() => window.routerControlTest.calls()
-      .some((call) => call.name === "switchCodexAccount" && call.args[0] === "22222222-2222-4222-8222-222222222222"));
-    await accountsSection.getByText("Router 全程保持运行", { exact: false }).waitFor();
+      .some((call) => call.name === "switchCodexAccount"
+        && call.args[0] === "22222222-2222-4222-8222-222222222222"
+        && call.args[1]?.handoffThreadId === "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+    await accountsSection.getByText("同一 Native GPT thread 接力", { exact: false }).waitFor();
     assert.deepEqual(pageErrors, [], `renderer errors: ${pageErrors.join("; ")}`);
   } finally {
     await browser.close();

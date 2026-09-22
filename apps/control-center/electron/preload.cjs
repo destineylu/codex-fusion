@@ -77,7 +77,10 @@ const routerControl = Object.freeze({
   submitCodexAccountCallback: (callbackUrl) => call("submitCodexAccountCallback", { callbackUrl }),
   cancelCodexAccountLogin: () => call("cancelCodexAccountLogin"),
   renameCodexAccount: (id, label) => call("renameCodexAccount", { id, label }),
-  switchCodexAccount: (id) => call("switchCodexAccount", { id }),
+  switchCodexAccount: (id, options) => call("switchCodexAccount", {
+    id,
+    ...(options?.handoffThreadId ? { handoffThreadId: options.handoffThreadId } : {}),
+  }),
   deleteCodexAccount: (id) => call("deleteCodexAccount", { id }),
   setCodexContextMode: (mode) => call("setCodexContextMode", { mode }),
   setCodexSkillException: (skillName, enabled) => call("setCodexSkillException", { skillName, enabled }),

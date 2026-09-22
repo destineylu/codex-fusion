@@ -215,11 +215,13 @@ http://localhost:<port>/auth/callback?code=...&state=...
 
 但 localhost 页面无法访问，把地址栏中的**完整 URL**粘贴回 Control Center 的 **Codex OAuth 回调 URL**，再点击 **提交回调 URL**。Control Center 只校验 loopback host、callback path、端口、`code` 和 `state`，然后把回调转交给仍在等待的官方 Codex 登录进程；它不会自行实现 OpenAI token exchange。官方 `codex login --device-auth` 也保留为备用入口。
 
-真正切换账号前，先完成当前 Codex turn 并**完全退出 Codex Desktop**，然后在目标 Profile 上点击 **切换**，再重新打开 Codex Desktop。切换过程会同步当前账号最新 auth、写入回滚备份、原子替换 live `auth.json` 并验证目标身份。
+真正切换账号前，先让当前 turn 停止并**完全退出 Codex Desktop**，然后在目标 Profile 上点击 **切换**。如果当前 Native GPT 任务因为 5 小时额度用尽而中断，Control Center 会同时查找最近一个可继续的 Native Codex root thread，并提供 **切换并接力此对话**：账号 A 切到 B 后重新打开同一个 `codex://threads/<id>`，继续原 thread，而不是要求新建聊天并依赖摘要接力。
 
-**账号切换不会停止或重启 Router 4202/4203，也不会修改 `config.toml`、模型 catalog、第三方 Provider 或 ChatGPT Web Bridge。** 当前版本只做手动显式切换，不做额度耗尽自动换号、账号池轮换或隐式 fallback。
+接力时 Router 会把新账号 B 的第一轮视为跨账号 Native handoff：完整重放现有会话历史，但删除只属于账号 A 后端存储命名空间、账号 B 无法解析的裸 `rs_*` stored reference；可携带的 opaque reasoning、普通消息、工具历史和工作区信息继续保留。只有 B 的请求被 Native 上游接受后，thread ownership 才提交给 B。**Auto Resume 只是附加能力，不是账号接力前提**；它未安装、停止或绑定同步失败，都不能阻止同一 thread 在新账号继续。
 
-Windows 上 Codex CLI / `app-server` 也可能叫 `Codex.exe`，所以 Control Center 按真实 Desktop 可执行路径判断是否仍有 Codex Desktop 在运行，不会把 npm CLI 或 AppX `resources\codex.exe` 错判成 Desktop。
+**账号切换不会停止或重启 Router 4202/4203，也不会修改 `config.toml`、模型 catalog、第三方 Provider 或 ChatGPT Web Bridge。** 当前版本仍只做手动显式切换，不做额度耗尽自动换号、账号池轮换或隐式 fallback。
+
+Windows 上 Codex CLI / `app-server` 也可能叫 `Codex.exe`。Control Center 现在通过 `Win32_Process.ExecutablePath` 判断真实 Desktop 安装路径；npm CLI / `app-server` 和 AppX `resources\codex.exe` 不算 Desktop。只有无法确认身份的 Codex-like 进程才 fail-closed 拒绝 auth 切换。
 
 ### 第 4 步：安装 ChatGPT Web Bridge（Browser-only 先跑通）
 

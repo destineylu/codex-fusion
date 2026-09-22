@@ -220,6 +220,8 @@ export interface CodexAccountProfilesSnapshot {
   desktopRunning: boolean;
   routerRestartRequired: false;
   configMutationRequired: false;
+  handoffThreadId?: string;
+  handoffPrepared?: boolean;
   why?: string;
   report?: string;
 }
@@ -296,7 +298,7 @@ export interface RouterControl {
   submitCodexAccountCallback(callbackUrl: string): Promise<CodexAccountProfilesSnapshot>;
   cancelCodexAccountLogin(): Promise<CodexAccountProfilesSnapshot>;
   renameCodexAccount(id: string, label: string): Promise<CodexAccountProfilesSnapshot>;
-  switchCodexAccount(id: string): Promise<CodexAccountProfilesSnapshot>;
+  switchCodexAccount(id: string, options?: { handoffThreadId?: string }): Promise<CodexAccountProfilesSnapshot>;
   deleteCodexAccount(id: string): Promise<CodexAccountProfilesSnapshot>;
   setCodexContextMode(mode: "light" | "full"): Promise<CodexSkillControlSnapshot>;
   setCodexSkillException(skillName: string, enabled: boolean): Promise<CodexSkillControlSnapshot>;

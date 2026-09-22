@@ -170,6 +170,10 @@ import {
 import { VERSION } from "./version.mjs";
 import { nativeSessionHeaders } from "./codex-native-session.mjs";
 import {
+  commitNativeThreadAccount,
+  inspectNativeThreadHandoff,
+} from "./native-thread-handoff.mjs";
+import {
   installStableFetchTransport,
   loopbackProbeFetch,
 } from "./fetch-transport.mjs";
@@ -3387,6 +3391,7 @@ async function handleResponses(request, response, requestUrl) {
   // client, and only the second is visible to the user.
   let emptyCompletionUnrepairable = false;
   let emptyCompletionPreludeLimit;
+  let nativeThreadObservation;
   let preludeLimitRetryable = false;
   let finalStatus;
   let activityStatus;
@@ -3609,6 +3614,8 @@ async function handleResponses(request, response, requestUrl) {
     } else {
       const native = { ...payload };
       const substitutedCaller = callerBroughtNoUpstreamCredential(request);
+      nativeThreadObservation = inspectNativeThreadHandoff(request.headers);
+      const crossAccountHandoff = nativeThreadObservation.handoff === true;
       // An extended-window variant is the model it was derived from, published
       // under a second slug so the picker can offer a different context
       // window (`src/native-context-variants.mjs`). chatgpt.com has never
@@ -3622,10 +3629,13 @@ async function handleResponses(request, response, requestUrl) {
       if (Array.isArray(payload.input)) {
         native.input = normalizeNativeInput(payload.input, {
           // Every substituted caller needs provenance-safe full reasoning.
-          // V1 compaction alone has a stored-reference contract, so it keeps
-          // bare rs_ references while ordinary/V2 stateless replay drops them.
-          statelessReasoning: substitutedCaller,
-          dropUnstoredReasoningReferences: substitutedCaller && !compactV1,
+          // Cross-account native handoff must also be stateless: the target
+          // account cannot resolve the previous account's stored rs_ namespace.
+          // Keep portable opaque encrypted reasoning, but drop bare rs_
+          // references that require account-local backend storage.
+          statelessReasoning: substitutedCaller || crossAccountHandoff,
+          dropUnstoredReasoningReferences:
+            (substitutedCaller && !compactV1) || crossAccountHandoff,
         });
         // Native turns leave here as stateless full conversations (the
         // previous_response_id below is stripped), so an old tool result costs
@@ -3649,7 +3659,7 @@ async function handleResponses(request, response, requestUrl) {
       pendingInterrupts = pendingInterruptTargets(native.input ?? payload.input, {
         namespaces: flattenedNamespaces,
       });
-      if (!compactV1) delete native.previous_response_id;
+      if (!compactV1 || crossAccountHandoff) delete native.previous_response_id;
       if (substitutedCaller) {
         normalizeNativeForSubstitutedCaller(native, { compact: compactV1 });
       }
@@ -3686,6 +3696,22 @@ async function handleResponses(request, response, requestUrl) {
     );
     upstreamRetries = retries;
     upstreamStatus = upstream.status;
+    if (!route && upstream.ok && nativeThreadObservation?.eligible) {
+      // Commit thread ownership only after the target native account accepted
+      // the request. A failed handoff remains pending and can be retried.
+      commitNativeThreadAccount(nativeThreadObservation, {
+        source: nativeThreadObservation.handoff
+          ? "cross-account-native-turn"
+          : "native-turn",
+      });
+      if (nativeThreadObservation.handoff && !QUIET) {
+        console.error(
+          `[codex-router] native-thread-handoff thread=${nativeThreadObservation.threadId} ` +
+          `from=${nativeThreadObservation.previousAccountFingerprint || "unknown"} ` +
+          `to=${nativeThreadObservation.currentAccountFingerprint}`,
+        );
+      }
+    }
     // Time until the upstream chain answered the request. Everything before
     // this is router-side work (body read, normalization, flattening, vision
     // bridge) plus the upstream's own time to produce response headers. For a
